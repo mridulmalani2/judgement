@@ -16,6 +16,18 @@ export class P2PManager {
     private roomId: string;
     private myPeerId: string | null = null;
     private destroyed = false;
+    private currentServerIndex = 0;
+    private readonly peerServers = [
+        { host: '0.peerjs.com', port: 443, path: '/', secure: true },
+        { host: '9000.peerjs.com', port: 443, path: '/', secure: true },
+        // Add custom server if configured
+        ...(process.env.NEXT_PUBLIC_PEER_HOST ? [{
+            host: process.env.NEXT_PUBLIC_PEER_HOST,
+            port: parseInt(process.env.NEXT_PUBLIC_PEER_PORT || '443'),
+            path: process.env.NEXT_PUBLIC_PEER_PATH || '/',
+            secure: true
+        }] : [])
+    ];
 
     constructor(roomId: string, isHost: boolean, handler: EventHandler) {
         this.roomId = roomId;
@@ -24,15 +36,31 @@ export class P2PManager {
     }
 
     public async init(): Promise<string> {
-        return new Promise((resolve, reject) => {
-            // Add timeout for initialization
-            const initTimeout = setTimeout(() => {
-                reject(new Error('P2P initialization timed out after 30 seconds. Please check your internet connection.'));
-            }, 30000);
+        return this.initWithServer(0);
+    }
 
-            // Use custom PeerJS server from env vars, or fallback to cloud
+    private async initWithServer(serverIndex: number): Promise<string> {
+        if (serverIndex >= this.peerServers.length) {
+            throw new Error('All PeerJS servers failed. Please check your internet connection.');
+        }
+
+        return new Promise((resolve, reject) => {
+            const server = this.peerServers[serverIndex];
+            console.log(`🔌 Attempting connection to PeerJS server ${serverIndex + 1}/${this.peerServers.length}:`, server.host);
+
+            // Add timeout for this specific server
+            const initTimeout = setTimeout(() => {
+                console.warn(`⏱️ Server ${server.host} timed out, trying next...`);
+                this.peer?.destroy();
+                this.initWithServer(serverIndex + 1).then(resolve).catch(reject);
+            }, 15000); // 15 seconds per server
+
             const peerConfig: any = {
-                debug: 2,
+                debug: 1, // Reduce debug noise
+                host: server.host,
+                port: server.port,
+                path: server.path,
+                secure: server.secure,
                 config: {
                     iceServers: [
                         { urls: 'stun:stun.l.google.com:19302' },
@@ -42,30 +70,19 @@ export class P2PManager {
                 }
             };
 
-            // Use custom server if configured
-            if (process.env.NEXT_PUBLIC_PEER_HOST) {
-                console.log('🚀 Using custom PeerJS server:', process.env.NEXT_PUBLIC_PEER_HOST);
-                peerConfig.host = process.env.NEXT_PUBLIC_PEER_HOST;
-                peerConfig.port = parseInt(process.env.NEXT_PUBLIC_PEER_PORT || '443');
-                peerConfig.path = process.env.NEXT_PUBLIC_PEER_PATH || '/';
-                peerConfig.secure = true;
-            } else {
-                console.log('☁️ Using PeerJS cloud server (0.peerjs.com)');
-                peerConfig.host = '0.peerjs.com';
-                peerConfig.port = 443;
-                peerConfig.path = '/';
-                peerConfig.secure = true;
-            }
-
             this.peer = new Peer(peerConfig);
 
+            let connected = false;
+
             this.peer.on('open', async (id) => {
-                console.log('✅ Peer connected! My ID:', id);
+                if (connected) return; // Prevent duplicate calls
+                connected = true;
+                console.log(`✅ Connected to ${server.host}! Peer ID:`, id);
                 clearTimeout(initTimeout);
                 this.myPeerId = id;
+                this.currentServerIndex = serverIndex;
 
                 if (this.isHost) {
-                    // Register as host
                     try {
                         await this.registerHost(id);
                         console.log('✅ Host registered successfully');
@@ -75,7 +92,6 @@ export class P2PManager {
                         reject(e);
                     }
                 } else {
-                    // Connect to host
                     console.log('🔍 Connecting to host...');
                     this.connectToHost().then(() => {
                         console.log('✅ Connected to host');
