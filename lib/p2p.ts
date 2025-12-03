@@ -25,47 +25,82 @@ export class P2PManager {
 
     public async init(): Promise<string> {
         return new Promise((resolve, reject) => {
-            // Use random ID for everyone to avoid collisions
+            // Add timeout for initialization
+            const initTimeout = setTimeout(() => {
+                reject(new Error('P2P initialization timed out after 30 seconds. Please check your internet connection.'));
+            }, 30000);
+
+            // Use alternative PeerJS servers with fallback
+            // Try multiple free PeerJS cloud instances
             this.peer = new Peer({
-                debug: 1
+                debug: 2,
+                host: '0.peerjs.com',
+                port: 443,
+                path: '/',
+                secure: true,
+                config: {
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:global.stun.twilio.com:3478' },
+                        { urls: 'stun:stun.services.mozilla.com:3478' }
+                    ]
+                }
             });
 
             this.peer.on('open', async (id) => {
-                console.log('My Peer ID:', id);
+                console.log('✅ Peer connected! My ID:', id);
+                clearTimeout(initTimeout);
                 this.myPeerId = id;
 
                 if (this.isHost) {
                     // Register as host
                     try {
                         await this.registerHost(id);
+                        console.log('✅ Host registered successfully');
                         resolve(id);
                     } catch (e) {
+                        console.error('❌ Failed to register host:', e);
                         reject(e);
                     }
                 } else {
                     // Connect to host
-                    this.connectToHost().then(() => resolve(id)).catch(reject);
+                    console.log('🔍 Connecting to host...');
+                    this.connectToHost().then(() => {
+                        console.log('✅ Connected to host');
+                        resolve(id);
+                    }).catch(reject);
                 }
             });
 
             this.peer.on('connection', (conn) => {
+                console.log('📞 Incoming connection from:', conn.peer);
                 this.handleConnection(conn);
             });
 
             this.peer.on('error', (err) => {
-                console.error('Peer error:', err);
-                // Ignore some non-critical errors
+                console.error('❌ Peer error:', err);
+                clearTimeout(initTimeout);
+
+                // Provide more helpful error messages
                 if (err.type === 'peer-unavailable') {
-                    // Handled in connectToHost retry logic usually, but if it bubbles up:
-                    // this.handler({ type: 'ERROR', error: 'Host not found. Retrying...' });
+                    console.log('⚠️ Peer unavailable - will retry');
+                } else if (err.type === 'network') {
+                    this.handler({ type: 'ERROR', error: 'Network error. Please check your internet connection and firewall settings.' });
+                    reject(new Error('Network error connecting to PeerJS server'));
+                } else if (err.type === 'server-error') {
+                    this.handler({ type: 'ERROR', error: 'PeerJS server error. Please try again in a moment.' });
+                    reject(new Error('PeerJS server error'));
                 } else {
                     this.handler({ type: 'ERROR', error: err.type });
                 }
             });
 
             this.peer.on('disconnected', () => {
-                console.log('Peer disconnected from server');
-                if (!this.destroyed && this.peer) this.peer.reconnect();
+                console.log('⚠️ Peer disconnected from server');
+                if (!this.destroyed && this.peer) {
+                    console.log('🔄 Attempting to reconnect...');
+                    this.peer.reconnect();
+                }
             });
         });
     }
