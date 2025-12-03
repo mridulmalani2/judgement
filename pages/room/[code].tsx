@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { v4 as uuidv4 } from 'uuid';
-import { PeerManager } from '../../lib/webrtc';
+import { io, Socket } from 'socket.io-client';
 import { GameState, Player, Card, GameAction, Suit, GameSettings } from '../../lib/types';
 import { createDeck, shuffleDeck, dealCards } from '../../lib/deck';
 import { getTrickWinner, isValidPlay, calculateScores, canBet, getAutoPlayCard } from '../../lib/gameEngine';
@@ -26,7 +26,7 @@ export default function Room() {
     const [myId, setMyId] = useState<string>('');
     const [myName, setMyName] = useState<string>('');
     const [gameState, setGameState] = useState<GameState | null>(null);
-    const [peerManager, setPeerManager] = useState<PeerManager | null>(null);
+    const [socket, setSocket] = useState<Socket | null>(null);
     const [isHost, setIsHost] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
     const [showMobileMenu, setShowMobileMenu] = useState(false);
@@ -51,120 +51,59 @@ export default function Room() {
         const isCreator = router.query.host === 'true';
         setIsHost(isCreator);
 
-        const myPeerId = isCreator ? `judgment-${roomCode}-host` : `judgment-${roomCode}-${storedId}`;
-        const hostPeerId = `judgment-${roomCode}-host`;
+        // Initialize Socket.io
+        const initSocket = async () => {
+            await fetch('/api/socket');
+            const newSocket = io({
+                path: '/api/socket',
+            });
 
-        const manager = new PeerManager(
-            myPeerId,
-            handleMessage,
-            handlePeerConnect,
-            handlePeerDisconnect
-        );
+            newSocket.on('connect', () => {
+                console.log('Connected to server');
+                setConnectionStatus('connected');
+                newSocket.emit('join_room', {
+                    roomId: roomCode,
+                    player: {
+                        id: storedId,
+                        name: storedName,
+                        seatIndex: -1, // Server assigns
+                        isHost: isCreator,
+                        connected: true,
+                        isAway: false,
+                        currentBet: null,
+                        tricksWon: 0,
+                        totalPoints: 0,
+                        hand: []
+                    }
+                });
+            });
 
-        manager.start().then(() => {
-            setConnectionStatus('connected');
-            if (!isCreator) {
-                // Connect to Host
-                manager.connectTo(hostPeerId);
-                // Send JOIN request
-                setTimeout(() => {
-                    manager.sendTo(hostPeerId, {
-                        type: 'ACTION',
-                        action: {
-                            type: 'JOIN',
-                            playerId: storedId,
-                            payload: { name: storedName }
-                        }
-                    });
-                }, 1000); // Wait for connection
-            } else {
-                // I am Host, initialize state
-                initializeGame(storedId, storedName);
-            }
-        });
+            newSocket.on('disconnect', () => {
+                console.log('Disconnected from server');
+                setConnectionStatus('disconnected');
+            });
 
-        setPeerManager(manager);
+            newSocket.on('state_update', (state: GameState) => {
+                setGameState(state);
+            });
+
+            newSocket.on('error', (msg: string) => {
+                console.error('Socket error:', msg);
+                alert(msg);
+            });
+
+            setSocket(newSocket);
+        };
+
+        initSocket();
 
         return () => {
-            manager.destroy();
+            socket?.disconnect();
         };
     }, [roomCode, router.query.host]);
 
-    const initializeGame = (hostId: string, hostName: string) => {
-        const newPlayer: Player = {
-            id: hostId,
-            name: hostName,
-            seatIndex: 0,
-            isHost: true,
-            connected: true,
-            isAway: false,
-            currentBet: null,
-            tricksWon: 0,
-            totalPoints: 0,
-            hand: []
-        };
-        const newState: GameState = {
-            roomCode: roomCode as string,
-            players: [newPlayer],
-            roundIndex: 0,
-            cardsPerPlayer: 0,
-            trump: 'spades',
-            dealerSeatIndex: 0,
-            currentLeaderSeatIndex: 0,
-            currentTrick: [],
-            phase: 'lobby',
-            deckSeed: uuidv4(),
-            scoresHistory: [],
-            settings: {
-                discardStrategy: 'random',
-                autoPlayEnabled: true,
-                allowSpectators: true
-            }
-        };
-        setGameState(newState);
-    };
-
-    const handleMessage = useCallback((senderId: string, payload: any) => {
-        if (payload.type === 'STATE_UPDATE') {
-            setGameState(payload.state);
-        } else if (payload.type === 'ACTION') {
-            // Only Host processes actions
-            if (isHost) {
-                processAction(payload.action);
-            }
-        }
-    }, [isHost, gameState]); // Dependencies need to be careful here. 
-    // If processAction depends on gameState, we need it.
-    // But handleMessage is passed to PeerManager once. 
-    // We might need a ref for current gameState to avoid stale closures if PeerManager doesn't update callback.
-    // PeerManager stores the callback. If we re-instantiate PeerManager, it's fine.
-    // But we don't. So we need a Ref for gameState.
-
-    const gameStateRef = useRef<GameState | null>(null);
-    useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
-
-    const handlePeerConnect = (peerId: string) => {
-        console.log('Peer connected:', peerId);
-        if (isHost && gameStateRef.current) {
-            // Send state to new peer
-            peerManager?.sendTo(peerId, { type: 'STATE_UPDATE', state: gameStateRef.current });
-        }
-    };
-
-    const handlePeerDisconnect = (peerId: string) => {
-        console.log('Peer disconnected:', peerId);
-        // If Host, mark player disconnected?
-        // We can parse playerId from peerId `judgment-ROOM-PLAYERID`
-        // But better to just let them reconnect.
-    };
-
     const sendAction = (action: GameAction) => {
-        if (isHost) {
-            processAction(action);
-        } else {
-            const hostPeerId = `judgment-${roomCode}-host`;
-            peerManager?.sendTo(hostPeerId, { type: 'ACTION', action });
-        }
+        socket?.emit('game_action', { roomId: roomCode, action });
     };
 
     // Autoplay Effect (Host Only)
@@ -177,7 +116,6 @@ export default function Room() {
         const timer = setTimeout(() => {
             if (gameState.phase === 'betting') {
                 // Auto Bet
-                // Simple strategy: Bet 0 unless forbidden, then 1.
                 let bet = 0;
                 const currentBets = gameState.players
                     .filter(p => p.currentBet !== null)
@@ -186,12 +124,12 @@ export default function Room() {
                 if (!canBet(bet, currentBets, gameState.players.length, gameState.cardsPerPlayer)) {
                     bet = 1;
                 }
-                processAction({ type: 'BET', playerId: currentPlayer.id, bet });
+                sendAction({ type: 'BET', playerId: currentPlayer.id, bet });
             } else if (gameState.phase === 'playing') {
                 // Auto Play Card
                 try {
                     const card = getAutoPlayCard(currentPlayer.hand, gameState.currentTrick, gameState.trump);
-                    processAction({ type: 'PLAY_CARD', playerId: currentPlayer.id, card });
+                    sendAction({ type: 'PLAY_CARD', playerId: currentPlayer.id, card });
                 } catch (e) {
                     console.error("Autoplay error", e);
                 }
@@ -200,188 +138,6 @@ export default function Room() {
 
         return () => clearTimeout(timer);
     }, [gameState, isHost]);
-
-    const startRound = (state: GameState) => {
-        const numPlayers = state.players.length;
-        // Cap at 13 cards max, even if fewer players
-        const maxCards = Math.min(Math.floor(52 / numPlayers), 13);
-        state.cardsPerPlayer = maxCards - state.roundIndex;
-
-        if (state.cardsPerPlayer <= 0) {
-            state.phase = 'finished';
-            return;
-        }
-
-        const { hands } = dealCards(numPlayers, {
-            seed: state.deckSeed + state.roundIndex, // Change seed per round
-            discardStrategy: state.settings.discardStrategy,
-            cardsPerPlayer: state.cardsPerPlayer
-        });
-
-        state.players.forEach((p, i) => {
-            p.hand = hands[i];
-            p.currentBet = null;
-            p.tricksWon = 0;
-        });
-
-        state.trump = ['spades', 'hearts', 'diamonds', 'clubs'][state.roundIndex % 4] as Suit;
-        state.dealerSeatIndex = state.roundIndex % numPlayers;
-        state.currentLeaderSeatIndex = (state.dealerSeatIndex + 1) % numPlayers; // First to bet is left of dealer
-        state.phase = 'betting';
-        state.currentTrick = [];
-    };
-
-    const processAction = (action: GameAction) => {
-        const currentState = gameStateRef.current;
-        if (!currentState) return;
-
-        let newState: GameState = JSON.parse(JSON.stringify(currentState)); // Deep copy
-
-        switch (action.type) {
-            case 'JOIN':
-                // Cast to any to handle custom JOIN action
-                const joinAction = action as any;
-                if (newState.players.some((p: Player) => p.id === joinAction.playerId)) {
-                    const p = newState.players.find((p: Player) => p.id === joinAction.playerId);
-                    if (p) p.connected = true;
-                } else {
-                    const newPlayer: Player = {
-                        id: joinAction.playerId,
-                        name: joinAction.payload.name,
-                        seatIndex: newState.players.length,
-                        isHost: false,
-                        connected: true,
-                        isAway: false,
-                        currentBet: null,
-                        tricksWon: 0,
-                        totalPoints: 0,
-                        hand: []
-                    };
-                    newState.players.push(newPlayer);
-                }
-                setGameState(newState);
-                peerManager?.broadcast({ type: 'STATE_UPDATE', state: newState });
-                break;
-
-            case 'START_GAME':
-                if (newState.phase !== 'lobby' && newState.phase !== 'finished') return;
-                newState.roundIndex = 0;
-                newState.scoresHistory = [];
-                newState.players.forEach((p: Player) => { p.totalPoints = 0; p.tricksWon = 0; p.currentBet = null; });
-                startRound(newState);
-                setGameState(newState);
-                peerManager?.broadcast({ type: 'STATE_UPDATE', state: newState });
-                break;
-
-            case 'BET':
-                const betterIndex = newState.players.findIndex((p: Player) => p.id === action.playerId);
-                if (betterIndex === -1) return;
-                const playerIndex = newState.players.findIndex(p => p.id === action.playerId);
-                if (playerIndex === -1) return;
-
-                // Validate bet
-                if (!canBet(action.bet, newState.players.map(p => p.currentBet || 0).slice(0, playerIndex), newState.players.length, newState.cardsPerPlayer)) {
-                    return; // Invalid bet
-                }
-
-                newState.players[playerIndex].currentBet = action.bet;
-
-                // Move turn
-                newState.currentLeaderSeatIndex = (newState.currentLeaderSeatIndex + 1) % newState.players.length;
-
-                // Check if all bets placed
-                const allBetsPlaced = newState.players.every(p => p.currentBet !== null);
-                if (allBetsPlaced) {
-                    newState.phase = 'playing';
-                    // Leader is left of dealer
-                    newState.currentLeaderSeatIndex = (newState.dealerSeatIndex + 1) % newState.players.length;
-                }
-
-                setGameState(newState);
-                peerManager?.broadcast({ type: 'STATE_UPDATE', state: newState });
-                break;
-
-            case 'PLAY_CARD':
-                const pIndex = newState.players.findIndex(p => p.id === action.playerId);
-                if (pIndex === -1) return;
-
-                const player = newState.players[pIndex];
-                const card = action.card;
-
-                // Validate play
-                if (!isValidPlay(card, player.hand, newState.currentTrick, newState.trump)) {
-                    return; // Invalid play
-                }
-
-                // Remove card from hand
-                player.hand = player.hand.filter(c => !(c.suit === card.suit && c.rank === card.rank));
-
-                // Add to trick
-                newState.currentTrick.push({ seatIndex: pIndex, card: card });
-
-                // Move turn
-                newState.currentLeaderSeatIndex = (newState.currentLeaderSeatIndex + 1) % newState.players.length;
-
-                // Check if trick complete
-                if (newState.currentTrick.length === newState.players.length) {
-                    // Determine winner
-                    const winnerSeatIndex = getTrickWinner(newState.currentTrick, newState.trump);
-
-                    // Update tricks won
-                    newState.players[winnerSeatIndex].tricksWon = (newState.players[winnerSeatIndex].tricksWon || 0) + 1;
-
-                    newState.currentTrick = [];
-                    newState.currentLeaderSeatIndex = winnerSeatIndex;
-
-                    // Check if round complete (hands empty)
-                    if (newState.players[0].hand.length === 0) {
-                        // Calculate scores
-                        const roundScores = calculateScores(newState.players);
-                        newState.players.forEach(p => {
-                            p.totalPoints = (p.totalPoints || 0) + (roundScores[p.id] || 0);
-                        });
-
-                        // Next round logic
-                        newState.roundIndex++;
-                        startRound(newState);
-                    }
-                }
-                setGameState(newState);
-                peerManager?.broadcast({ type: 'STATE_UPDATE', state: newState });
-                break;
-
-            case 'UPDATE_SETTINGS':
-                const updateSettingsAction = action as { type: 'UPDATE_SETTINGS', settings: Partial<GameSettings> };
-                newState.settings = { ...newState.settings, ...updateSettingsAction.settings };
-                setGameState(newState);
-                peerManager?.broadcast({ type: 'STATE_UPDATE', state: newState });
-                break;
-
-            case 'TOGGLE_AWAY':
-                const awayPlayer = newState.players.find((p: Player) => p.id === action.playerId);
-                if (awayPlayer) {
-                    awayPlayer.isAway = !awayPlayer.isAway;
-                    setGameState(newState);
-                    peerManager?.broadcast({ type: 'STATE_UPDATE', state: newState });
-                }
-                break;
-
-            case 'RENAME_PLAYER':
-                const renamePlayer = newState.players.find((p: Player) => p.id === action.playerId);
-                if (renamePlayer) {
-                    renamePlayer.name = action.newName;
-                    setGameState(newState);
-                    peerManager?.broadcast({ type: 'STATE_UPDATE', state: newState });
-                }
-                break;
-
-            case 'END_GAME':
-                newState.phase = 'finished';
-                setGameState(newState);
-                peerManager?.broadcast({ type: 'STATE_UPDATE', state: newState });
-                break;
-        }
-    };
 
 
     // UI Rendering

@@ -104,17 +104,140 @@ export function setupSocketIO(io: Server) {
     });
 }
 
-function processGameAction(state: GameState, action: GameAction): GameState {
-    // This function will contain the core game loop logic, moved from the client.
-    // For now, we'll just return the state as is to satisfy the interface, 
-    // but in the full migration, we'd move the reducer logic here.
+function startRound(state: GameState) {
+    const numPlayers = state.players.length;
+    // Cap at 13 cards max, even if fewer players
+    const maxCards = Math.min(Math.floor(52 / numPlayers), 13);
+    state.cardsPerPlayer = maxCards - state.roundIndex;
 
-    // Placeholder implementation to show structure
+    if (state.cardsPerPlayer <= 0) {
+        state.phase = 'finished';
+        return;
+    }
+
+    const { hands } = dealCards(numPlayers, {
+        seed: state.deckSeed + state.roundIndex, // Change seed per round
+        discardStrategy: state.settings.discardStrategy,
+        cardsPerPlayer: state.cardsPerPlayer
+    });
+
+    state.players.forEach((p, i) => {
+        p.hand = hands[i];
+        p.currentBet = null;
+        p.tricksWon = 0;
+    });
+
+    state.trump = ['spades', 'hearts', 'diamonds', 'clubs'][state.roundIndex % 4] as Suit;
+    state.dealerSeatIndex = state.roundIndex % numPlayers;
+    state.currentLeaderSeatIndex = (state.dealerSeatIndex + 1) % numPlayers; // First to bet is left of dealer
+    state.phase = 'betting';
+    state.currentTrick = [];
+}
+
+function processGameAction(state: GameState, action: GameAction): GameState {
+    const newState = JSON.parse(JSON.stringify(state)); // Deep copy
+
     switch (action.type) {
         case 'START_GAME':
-            if (state.phase !== 'lobby') throw new Error("Game already started");
-            // Logic to start game...
-            return { ...state, phase: 'betting' }; // Simplified
+            if (newState.phase !== 'lobby' && newState.phase !== 'finished') throw new Error("Game already started");
+            newState.roundIndex = 0;
+            newState.scoresHistory = [];
+            newState.players.forEach((p: Player) => { p.totalPoints = 0; p.tricksWon = 0; p.currentBet = null; });
+            startRound(newState);
+            return newState;
+
+        case 'BET':
+            const playerIndex = newState.players.findIndex((p: Player) => p.id === action.playerId);
+            if (playerIndex === -1) return newState;
+
+            // Validate bet
+            if (!canBet(action.bet, newState.players.map((p: Player) => p.currentBet || 0).slice(0, playerIndex), newState.players.length, newState.cardsPerPlayer)) {
+                throw new Error("Invalid bet");
+            }
+
+            newState.players[playerIndex].currentBet = action.bet;
+
+            // Move turn
+            newState.currentLeaderSeatIndex = (newState.currentLeaderSeatIndex + 1) % newState.players.length;
+
+            // Check if all bets placed
+            const allBetsPlaced = newState.players.every((p: Player) => p.currentBet !== null);
+            if (allBetsPlaced) {
+                newState.phase = 'playing';
+                // Leader is left of dealer
+                newState.currentLeaderSeatIndex = (newState.dealerSeatIndex + 1) % newState.players.length;
+            }
+            return newState;
+
+        case 'PLAY_CARD':
+            const pIndex = newState.players.findIndex((p: Player) => p.id === action.playerId);
+            if (pIndex === -1) return newState;
+
+            const player = newState.players[pIndex];
+            const card = action.card;
+
+            // Validate play
+            if (!isValidPlay(card, player.hand, newState.currentTrick, newState.trump)) {
+                throw new Error("Invalid play");
+            }
+
+            // Remove card from hand
+            player.hand = player.hand.filter((c: Card) => !(c.suit === card.suit && c.rank === card.rank));
+
+            // Add to trick
+            newState.currentTrick.push({ seatIndex: pIndex, card: card });
+
+            // Move turn
+            newState.currentLeaderSeatIndex = (newState.currentLeaderSeatIndex + 1) % newState.players.length;
+
+            // Check if trick complete
+            if (newState.currentTrick.length === newState.players.length) {
+                // Determine winner
+                const winnerSeatIndex = getTrickWinner(newState.currentTrick, newState.trump);
+
+                // Update tricks won
+                newState.players[winnerSeatIndex].tricksWon = (newState.players[winnerSeatIndex].tricksWon || 0) + 1;
+
+                newState.currentTrick = [];
+                newState.currentLeaderSeatIndex = winnerSeatIndex;
+
+                // Check if round complete (hands empty)
+                if (newState.players[0].hand.length === 0) {
+                    // Calculate scores
+                    const roundScores = calculateScores(newState.players);
+                    newState.players.forEach((p: Player) => {
+                        p.totalPoints = (p.totalPoints || 0) + (roundScores[p.id] || 0);
+                    });
+
+                    // Next round logic
+                    newState.roundIndex++;
+                    startRound(newState);
+                }
+            }
+            return newState;
+
+        case 'UPDATE_SETTINGS':
+            newState.settings = { ...newState.settings, ...action.settings };
+            return newState;
+
+        case 'TOGGLE_AWAY':
+            const awayPlayer = newState.players.find((p: Player) => p.id === action.playerId);
+            if (awayPlayer) {
+                awayPlayer.isAway = !awayPlayer.isAway;
+            }
+            return newState;
+
+        case 'RENAME_PLAYER':
+            const renamePlayer = newState.players.find((p: Player) => p.id === action.playerId);
+            if (renamePlayer) {
+                renamePlayer.name = action.newName;
+            }
+            return newState;
+
+        case 'END_GAME':
+            newState.phase = 'finished';
+            return newState;
+
         default:
             return state;
     }
