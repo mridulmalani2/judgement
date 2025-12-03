@@ -25,8 +25,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const { action, peerId, msg } = req.body
 
       if (action === 'register_host') {
+        if (!peerId) return res.status(400).json({ error: 'Peer ID required' })
+
         if (redis) {
-          await redis.set(`room:${room}:host`, peerId, { ex: 3600 }) // 1 hour expiry
+          await redis.set(`room:${room}:host`, peerId, { ex: 3600 })
         } else {
           (global as any).ROOM_HOSTS = (global as any).ROOM_HOSTS || {}
             ; (global as any).ROOM_HOSTS[room] = peerId

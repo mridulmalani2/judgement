@@ -71,12 +71,25 @@ export class P2PManager {
     }
 
     private async registerHost(peerId: string) {
-        const res = await fetch(`/ api / signaling / ${this.roomId} `, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'register_host', peerId })
-        });
-        if (!res.ok) throw new Error('Failed to register host');
+        try {
+            const res = await fetch(`/api/signaling/${this.roomId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'register_host', peerId })
+            });
+
+            if (!res.ok) {
+                const errorData = await res.text();
+                console.error('Register host failed:', res.status, errorData);
+                throw new Error(`Failed to register host: ${res.status} ${errorData}`);
+            }
+
+            const data = await res.json();
+            console.log('Host registered successfully:', data);
+        } catch (error) {
+            console.error('Register host error:', error);
+            throw error;
+        }
     }
 
     private async getHostId(): Promise<string> {
