@@ -37,6 +37,8 @@ export default function Room() {
     useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
 
     const p2pRef = useRef<P2PManager | null>(null);
+    const pollingRef = useRef<NodeJS.Timeout | null>(null);
+    const usePollingRef = useRef(false);
 
     // Initialize
     useEffect(() => {
@@ -57,7 +59,7 @@ export default function Room() {
         const isCreator = router.query.host === 'true';
         setIsHost(isCreator);
 
-        // Cleanup previous instance
+        // Try P2P first
         if (p2pRef.current) {
             p2pRef.current.destroy();
         }
@@ -68,21 +70,75 @@ export default function Room() {
 
         manager.init()
             .then(() => {
+                console.log('✅ P2P connected successfully!');
                 setConnectionStatus('connected');
                 if (isCreator) {
                     initializeGame(storedId, storedName);
                 }
             })
             .catch((err) => {
-                console.error("P2P Init Error:", err);
-                setConnectionStatus('error');
-                setErrorMessage(err.message);
+                console.error("❌ P2P failed, switching to polling mode:", err);
+                // P2P failed, use polling instead
+                usePollingRef.current = true;
+                startPolling(isCreator, storedId, storedName);
             });
 
         return () => {
             manager.destroy();
+            stopPolling();
         };
     }, [roomCode, router.query.host]);
+
+    const startPolling = (isCreator: boolean, playerId: string, playerName: string) => {
+        console.log('🔄 Starting polling mode...');
+        setConnectionStatus('connecting');
+
+        if (isCreator) {
+            initializeGame(playerId, playerName);
+        } else {
+            // Join the room
+            setTimeout(() => {
+                sendAction({
+                    type: 'JOIN',
+                    playerId: playerId,
+                    payload: { name: playerName }
+                } as any);
+            }, 1000);
+        }
+
+        // Poll for state updates
+        const poll = async () => {
+            try {
+                const res = await fetch(`/api/rooms/${roomCode}/sync`);
+                if (res.ok) {
+                    const state = await res.json();
+                    setGameState(state);
+                    setConnectionStatus('connected');
+                }
+
+                // If host, process pending actions
+                if (isCreator) {
+                    const actionsRes = await fetch(`/api/rooms/${roomCode}/sync`, { method: 'DELETE' });
+                    if (actionsRes.ok) {
+                        const { actions } = await actionsRes.json();
+                        actions.forEach((item: any) => processAction(item.action));
+                    }
+                }
+            } catch (error) {
+                console.error('Polling error:', error);
+            }
+        };
+
+        poll();
+        pollingRef.current = setInterval(poll, 500);
+    };
+
+    const stopPolling = () => {
+        if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+        }
+    };
 
     const handleP2PEvent = (event: P2PEvent, amHost: boolean, myId: string, myName: string) => {
         switch (event.type) {
@@ -156,11 +212,21 @@ export default function Room() {
         setGameState(newState);
     };
 
-    const sendAction = (action: GameAction) => {
+    const sendAction = async (action: GameAction) => {
         if (isHost) {
             processAction(action);
         } else {
-            p2pRef.current?.send({ type: 'ACTION', action });
+            if (usePollingRef.current) {
+                // Use polling API
+                await fetch(`/api/rooms/${roomCode}/sync`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action, playerId: myId })
+                });
+            } else {
+                // Use P2P
+                p2pRef.current?.send({ type: 'ACTION', action });
+            }
         }
     };
 
@@ -302,7 +368,18 @@ export default function Room() {
         }
 
         setGameState(newState);
-        p2pRef.current?.send({ type: 'STATE_UPDATE', state: newState });
+
+        if (usePollingRef.current) {
+            // Save to server in polling mode
+            fetch(`/api/rooms/${roomCode}/sync`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newState)
+            });
+        } else {
+            // Broadcast via P2P
+            p2pRef.current?.send({ type: 'STATE_UPDATE', state: newState });
+        }
     };
 
     // Autoplay Effect (Host Only)

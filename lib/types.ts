@@ -45,6 +45,7 @@ export interface GameState {
     deckSeed: string; // For reproducible shuffling if needed
     scoresHistory: { [playerId: string]: number }[]; // History of scores per round
     settings: GameSettings;
+    lastUpdate?: number; // Timestamp for change detection in polling mode
 }
 
 export type GameAction =
