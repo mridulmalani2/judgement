@@ -26,19 +26,20 @@ export function setupSocketIO(io: Server) {
 
             if (!rooms[roomId]) {
                 // Initialize new room
+                // Initialize new room
                 rooms[roomId] = {
                     gameState: {
-                        id: roomId,
+                        roomCode: roomId,
                         players: [],
-                        deck: [],
-                        currentRound: 0,
-                        totalRounds: 7, // Default, can be changed
-                        trumpSuit: null,
-                        currentTurn: 0,
-                        phase: 'LOBBY',
-                        trick: [],
-                        scores: {},
-                        dealerIndex: 0,
+                        roundIndex: 0,
+                        cardsPerPlayer: 0,
+                        trump: 'spades',
+                        dealerSeatIndex: 0,
+                        currentLeaderSeatIndex: 0,
+                        phase: 'lobby',
+                        currentTrick: [],
+                        scoresHistory: [],
+                        deckSeed: uuidv4(),
                         settings: {
                             discardStrategy: 'random',
                             autoPlayEnabled: true,
@@ -54,12 +55,22 @@ export function setupSocketIO(io: Server) {
 
             if (existingPlayerIndex !== -1) {
                 // Reconnect existing player
-                room.gameState.players[existingPlayerIndex].isConnected = true;
+                room.gameState.players[existingPlayerIndex].connected = true;
                 // Update socket ID mapping if needed (omitted for simplicity, usually handled by auth)
             } else {
                 // Add new player
-                if (room.gameState.phase === 'LOBBY') {
-                    room.gameState.players.push({ ...player, isConnected: true, tricksWon: 0, hand: [] });
+                if (room.gameState.phase === 'lobby') {
+                    room.gameState.players.push({
+                        ...player,
+                        connected: true,
+                        tricksWon: 0,
+                        hand: [],
+                        isHost: room.gameState.players.length === 0, // First player is host
+                        seatIndex: room.gameState.players.length,
+                        isAway: false,
+                        currentBet: null,
+                        totalPoints: 0
+                    });
                 } else {
                     // Spectator or reconnect logic could go here
                     socket.emit('error', 'Game already started');
@@ -101,9 +112,9 @@ function processGameAction(state: GameState, action: GameAction): GameState {
     // Placeholder implementation to show structure
     switch (action.type) {
         case 'START_GAME':
-            if (state.phase !== 'LOBBY') throw new Error("Game already started");
+            if (state.phase !== 'lobby') throw new Error("Game already started");
             // Logic to start game...
-            return { ...state, phase: 'BETTING' }; // Simplified
+            return { ...state, phase: 'betting' }; // Simplified
         default:
             return state;
     }
