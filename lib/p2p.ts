@@ -53,7 +53,7 @@ export class P2PManager {
                 console.warn(`⏱️ Server ${server.host} timed out, trying next...`);
                 this.peer?.destroy();
                 this.initWithServer(serverIndex + 1).then(resolve).catch(reject);
-            }, 15000); // 15 seconds per server
+            }, 5000); // 5 seconds per server
 
             const peerConfig: any = {
                 debug: 1, // Reduce debug noise
@@ -156,7 +156,7 @@ export class P2PManager {
     }
 
     private async getHostId(): Promise<string> {
-        const res = await fetch(`/ api / signaling / ${this.roomId}?action = get_host`);
+        const res = await fetch(`/api/signaling/${this.roomId}?action=get_host`);
         if (!res.ok) throw new Error('Host not found');
         const data = await res.json();
         return data.hostId;

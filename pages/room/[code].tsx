@@ -68,8 +68,19 @@ export default function Room() {
         p2pRef.current = manager;
         setP2P(manager);
 
+        // Force fallback if P2P takes too long overall
+        const globalTimeout = setTimeout(() => {
+            if (!usePollingRef.current && connectionStatus !== 'connected') {
+                console.warn("⚠️ P2P initialization took too long, forcing polling mode...");
+                manager.destroy();
+                usePollingRef.current = true;
+                startPolling(isCreator, storedId, storedName);
+            }
+        }, 8000); // 8 seconds max wait
+
         manager.init()
             .then(() => {
+                clearTimeout(globalTimeout);
                 console.log('✅ P2P connected successfully!');
                 setConnectionStatus('connected');
                 if (isCreator) {
@@ -77,6 +88,7 @@ export default function Room() {
                 }
             })
             .catch((err) => {
+                clearTimeout(globalTimeout);
                 console.error("❌ P2P failed, switching to polling mode:", err);
                 // P2P failed, use polling instead
                 usePollingRef.current = true;
@@ -437,7 +449,9 @@ export default function Room() {
                 <div className="animate-spin w-12 h-12 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
                 <h2 className="text-xl font-bold">Connecting to Room...</h2>
                 <p className="text-slate-400 mt-2">Code: {roomCode}</p>
-                {connectionStatus === 'connecting' && <p className="text-xs text-slate-500 mt-4">Establishing P2P connection...</p>}
+                <p className="text-xs text-slate-600 mt-4">
+                    {usePollingRef.current ? 'Using reliable polling mode...' : 'Establishing P2P connection...'}
+                </p>
             </div>
         </div>
     );
