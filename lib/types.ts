@@ -26,6 +26,12 @@ export interface PlayedCard {
 
 export type GamePhase = 'lobby' | 'dealing' | 'betting' | 'playing' | 'scoring' | 'finished';
 
+export interface GameSettings {
+    discardStrategy: 'random' | 'priority';
+    autoPlayEnabled: boolean;
+    allowSpectators: boolean;
+}
+
 export interface GameState {
     roomCode: string;
     players: Player[];
@@ -38,10 +44,11 @@ export interface GameState {
     phase: GamePhase;
     deckSeed: string; // For reproducible shuffling if needed
     scoresHistory: { [playerId: string]: number }[]; // History of scores per round
+    settings: GameSettings;
 }
 
 export interface GameAction {
-    type: 'JOIN' | 'START_GAME' | 'BET' | 'PLAY_CARD' | 'NEXT_ROUND' | 'END_GAME' | 'KICK_PLAYER' | 'TOGGLE_AWAY';
+    type: 'JOIN' | 'START_GAME' | 'BET' | 'PLAY_CARD' | 'NEXT_ROUND' | 'END_GAME' | 'KICK_PLAYER' | 'TOGGLE_AWAY' | 'UPDATE_SETTINGS' | 'RENAME_PLAYER';
     payload?: any;
     playerId: string;
 }

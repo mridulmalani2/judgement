@@ -29,9 +29,6 @@ export function getTrickWinner(trick: PlayedCard[], trump: Suit): number {
                 winningCardIndex = i;
             }
         }
-        // If current is lead suit and winning was not (and not trump), current wins (shouldn't happen if logic correct)
-        // Actually, if winning was not lead suit and not trump, it means it was a discard? 
-        // But the first card sets the lead suit, so winningCard starts as lead suit.
     }
 
     return trick[winningCardIndex].seatIndex;
@@ -63,6 +60,7 @@ export function calculateScores(players: Player[]): { [playerId: string]: number
         const won = p.tricksWon;
 
         if (bet === won) {
+            // Formula: (N + 1) * 10 + N
             scores[p.id] = (bet + 1) * 10 + bet;
         } else {
             scores[p.id] = 0;
@@ -73,18 +71,63 @@ export function calculateScores(players: Player[]): { [playerId: string]: number
 }
 
 export function canBet(bet: number, currentBets: number[], numPlayers: number, cardsPerPlayer: number): boolean {
-    // currentBets includes bets from players before this one
     // If this is the LAST player (currentBets.length === numPlayers - 1)
-    // Then sum(currentBets) + bet !== cardsPerPlayer
-
     if (currentBets.length === numPlayers - 1) {
         const currentSum = currentBets.reduce((a, b) => a + b, 0);
-        return (currentSum + bet) !== cardsPerPlayer; // Wait, total hands = cardsPerPlayer * numPlayers? NO.
-        // Total hands in a round = cardsPerPlayer.
-        // Example: 5 players, 10 cards each. Total tricks = 10.
-        // Sum of bets cannot be 10.
-        // Correct: cardsPerPlayer is the total number of tricks available.
+        // The sum of all bets cannot equal the total number of tricks (cardsPerPlayer)
+        return (currentSum + bet) !== cardsPerPlayer;
     }
 
     return true;
+}
+
+export function getAutoPlayCard(hand: Card[], trick: PlayedCard[], trump: Suit): Card {
+    // Rule:
+    // Off-turn (following): Play Ace if lead suit present; else lowest of lead suit.
+    // On-turn (leading): Lowest non-trump.
+
+    if (hand.length === 0) throw new Error("Cannot autoplay with empty hand");
+
+    // Leading
+    if (trick.length === 0) {
+        // Lowest non-trump
+        const nonTrumps = hand.filter(c => c.suit !== trump);
+        if (nonTrumps.length > 0) {
+            // Sort by rank ascending
+            nonTrumps.sort((a, b) => a.rank - b.rank);
+            return nonTrumps[0];
+        }
+        // If only trumps, play lowest trump
+        const trumps = hand.filter(c => c.suit === trump);
+        trumps.sort((a, b) => a.rank - b.rank);
+        return trumps[0];
+    }
+
+    // Following
+    const leadSuit = trick[0].card.suit;
+    const leadSuitCards = hand.filter(c => c.suit === leadSuit);
+
+    if (leadSuitCards.length > 0) {
+        // Check for Ace
+        const ace = leadSuitCards.find(c => c.rank === 14);
+        if (ace) return ace;
+
+        // Else lowest of lead suit
+        leadSuitCards.sort((a, b) => a.rank - b.rank);
+        return leadSuitCards[0];
+    }
+
+    // No lead suit
+    // Play lowest non-trump (if available), else lowest trump?
+    // User didn't specify exactly for this case, but "lowest non-trump" is a good general "throw away" strategy.
+    const nonTrumps = hand.filter(c => c.suit !== trump);
+    if (nonTrumps.length > 0) {
+        nonTrumps.sort((a, b) => a.rank - b.rank);
+        return nonTrumps[0];
+    }
+
+    // Only trumps left
+    const trumps = hand.filter(c => c.suit === trump);
+    trumps.sort((a, b) => a.rank - b.rank);
+    return trumps[0];
 }

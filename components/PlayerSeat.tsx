@@ -1,7 +1,8 @@
 import { Player } from '../lib/types';
 import clsx from 'clsx';
-import { User, Crown, Gavel } from 'lucide-react';
+import { User, Crown, Gavel, UserX } from 'lucide-react';
 import { motion } from 'framer-motion';
+import DealerButton from './DealerButton';
 
 interface PlayerSeatProps {
     player: Player;
@@ -37,8 +38,14 @@ export default function PlayerSeat({ player, isDealer, isCurrentTurn, isMe, posi
                 )}
 
                 {isDealer && (
-                    <div className="absolute -bottom-2 -right-2 bg-white rounded-full w-6 h-6 flex items-center justify-center border border-slate-300 shadow-sm" title="Dealer">
-                        <span className="text-xs font-bold text-black">D</span>
+                    <div className="absolute -bottom-2 -right-2">
+                        <DealerButton />
+                    </div>
+                )}
+
+                {player.isAway && (
+                    <div className="absolute -top-2 -left-2 bg-slate-500 rounded-full p-1 shadow-md" title="Away">
+                        <UserX className="w-3 h-3 text-white" />
                     </div>
                 )}
             </div>

@@ -1,4 +1,5 @@
 import { Card, Suit } from './types';
+import seedrandom from 'seedrandom';
 
 export const SUITS: Suit[] = ['clubs', 'diamonds', 'hearts', 'spades'];
 
@@ -18,39 +19,67 @@ export function createDeck(): Card[] {
     return deck;
 }
 
-export function shuffleDeck(deck: Card[]): Card[] {
-    // Fisher-Yates shuffle
+export function shuffleDeck(deck: Card[], seed?: string): Card[] {
+    const rng = seed ? seedrandom(seed) : Math.random;
     const newDeck = [...deck];
     for (let i = newDeck.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
+        const j = Math.floor(rng() * (i + 1));
         [newDeck[i], newDeck[j]] = [newDeck[j], newDeck[i]];
     }
     return newDeck;
 }
 
-export function dealCards(numPlayers: number): { hands: Card[][], remaining: Card[] } {
-    const deck = shuffleDeck(createDeck());
-    const cardsPerPlayer = Math.floor(52 / numPlayers);
+interface DealOptions {
+    seed?: string;
+    discardStrategy?: 'random' | 'priority';
+    cardsPerPlayer?: number; // Override if needed, otherwise calculated
+}
 
-    // We want to deal 'cardsPerPlayer' to each player.
-    // The remaining cards are discarded (randomly, since we shuffled).
+export function dealCards(numPlayers: number, options: DealOptions = {}): { hands: Card[][], remaining: Card[] } {
+    let deck = createDeck();
+    const cardsPerPlayer = options.cardsPerPlayer || Math.floor(52 / numPlayers);
+    const totalCardsNeeded = numPlayers * cardsPerPlayer;
+    const cardsToDiscard = 52 - totalCardsNeeded;
+
+    if (options.discardStrategy === 'priority' && cardsToDiscard > 0) {
+        // Priority Discard: Remove lowest cards first.
+        // Order: 2♣, 2♦, 2♥, 2♠, 3♣... (Rank primary, Suit secondary)
+        // Suit order for sorting: Clubs (0), Diamonds (1), Hearts (2), Spades (3)
+        // We want to REMOVE the lowest.
+
+        // Sort Low to High
+        deck.sort((a, b) => {
+            if (a.rank !== b.rank) return a.rank - b.rank;
+            return SUITS.indexOf(a.suit) - SUITS.indexOf(b.suit);
+        });
+
+        // Remove the first 'cardsToDiscard' cards (the lowest ones)
+        // The remaining cards are the "High" cards.
+        deck = deck.slice(cardsToDiscard);
+    }
+
+    // Now shuffle the deck (either full 52 if random discard, or the subset if priority)
+    // Wait, if 'random' discard, we shuffle 52 then take top N.
+    // If 'priority' discard, we filtered first, then shuffle the remaining.
+
+    deck = shuffleDeck(deck, options.seed);
+
+    // If random discard, we just take the first totalCardsNeeded.
+    // The rest are "remaining" (discarded).
 
     const hands: Card[][] = Array.from({ length: numPlayers }, () => []);
-
     let cardIndex = 0;
-    // Deal round-robin or chunks? 
-    // Plan said: "Deal cardsPerPlayer cards to each player... Stop dealing when dealCount reached."
-    // Standard deal is usually 1 at a time or all at once. 
-    // Let's do 1 at a time for tradition, but logically it's the same if shuffled.
 
     for (let i = 0; i < cardsPerPlayer; i++) {
         for (let p = 0; p < numPlayers; p++) {
-            hands[p].push(deck[cardIndex]);
-            cardIndex++;
+            if (cardIndex < deck.length) {
+                hands[p].push(deck[cardIndex]);
+                cardIndex++;
+            }
         }
     }
 
-    // Sort hands for convenience (by Suit then Rank)
+    // Sort hands for player convenience
     hands.forEach(hand => {
         hand.sort((a, b) => {
             if (a.suit !== b.suit) return SUITS.indexOf(a.suit) - SUITS.indexOf(b.suit);

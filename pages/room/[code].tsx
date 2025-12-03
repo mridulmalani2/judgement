@@ -3,15 +3,18 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { v4 as uuidv4 } from 'uuid';
 import { PeerManager } from '../../lib/webrtc';
-import { GameState, Player, Card, GameAction, Suit } from '../../lib/types';
+import { GameState, Player, Card, GameAction, Suit, GameSettings } from '../../lib/types';
 import { dealCards } from '../../lib/deck';
-import { getTrickWinner, isValidPlay, calculateScores, canBet } from '../../lib/gameEngine';
+import { getTrickWinner, isValidPlay, calculateScores, canBet, getAutoPlayCard } from '../../lib/gameEngine';
 import PlayerSeat from '../../components/PlayerSeat';
 import Hand from '../../components/Hand';
 import CardComponent from '../../components/Card';
 import BetInput from '../../components/BetInput';
 import Leaderboard from '../../components/Leaderboard';
-import { Copy, Share2, MessageCircle, Menu, Users, Crown } from 'lucide-react';
+import DealerButton from '../../components/DealerButton';
+import GameHUD from '../../components/GameHUD';
+import HostSettings from '../../components/HostSettings';
+import { Copy, Share2, MessageCircle, Menu, Users, Crown, Settings as SettingsIcon, UserX, UserCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 
@@ -27,6 +30,7 @@ export default function Room() {
     const [isHost, setIsHost] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
     const [showMobileMenu, setShowMobileMenu] = useState(false);
+    const [showSettings, setShowSettings] = useState(false);
 
     // Initialize
     useEffect(() => {
@@ -44,10 +48,6 @@ export default function Room() {
         setMyName(storedName);
         setMyId(storedId);
 
-        // Determine if I am attempting to be host (from query param or just logic?)
-        // Simpler: Try to connect to Host. If fail, am I the host?
-        // Actually, Home page should decide.
-        // Let's assume Home page passes `?host=true` if creating.
         const isCreator = router.query.host === 'true';
         setIsHost(isCreator);
 
@@ -114,7 +114,12 @@ export default function Room() {
             currentTrick: [],
             phase: 'lobby',
             deckSeed: uuidv4(),
-            scoresHistory: []
+            scoresHistory: [],
+            settings: {
+                discardStrategy: 'random',
+                autoPlayEnabled: true,
+                allowSpectators: true
+            }
         };
         setGameState(newState);
     };
@@ -162,6 +167,40 @@ export default function Room() {
         }
     };
 
+    // Autoplay Effect (Host Only)
+    useEffect(() => {
+        if (!isHost || !gameState || !gameState.settings.autoPlayEnabled) return;
+
+        const currentPlayer = gameState.players[gameState.currentLeaderSeatIndex];
+        if (!currentPlayer || !currentPlayer.isAway) return;
+
+        const timer = setTimeout(() => {
+            if (gameState.phase === 'betting') {
+                // Auto Bet
+                // Simple strategy: Bet 0 unless forbidden, then 1.
+                let bet = 0;
+                const currentBets = gameState.players
+                    .filter(p => p.currentBet !== null)
+                    .map(p => p.currentBet as number);
+
+                if (!canBet(bet, currentBets, gameState.players.length, gameState.cardsPerPlayer)) {
+                    bet = 1;
+                }
+                processAction({ type: 'BET', playerId: currentPlayer.id, payload: { bet } });
+            } else if (gameState.phase === 'playing') {
+                // Auto Play Card
+                try {
+                    const card = getAutoPlayCard(currentPlayer.hand, gameState.currentTrick, gameState.trump);
+                    processAction({ type: 'PLAY_CARD', playerId: currentPlayer.id, payload: { card } });
+                } catch (e) {
+                    console.error("Autoplay error", e);
+                }
+            }
+        }, 2000); // 2 second delay for realism
+
+        return () => clearTimeout(timer);
+    }, [gameState, isHost]);
+
     const processAction = (action: GameAction) => {
         const currentState = gameStateRef.current;
         if (!currentState) return;
@@ -171,7 +210,6 @@ export default function Room() {
         switch (action.type) {
             case 'JOIN':
                 if (newState.players.some((p: Player) => p.id === action.playerId)) {
-                    // Reconnect logic?
                     const p = newState.players.find((p: Player) => p.id === action.playerId);
                     if (p) p.connected = true;
                 } else {
@@ -191,6 +229,26 @@ export default function Room() {
                 }
                 break;
 
+            case 'UPDATE_SETTINGS':
+                if (newState.phase === 'lobby') {
+                    newState.settings = action.payload;
+                }
+                break;
+
+            case 'TOGGLE_AWAY':
+                const awayPlayer = newState.players.find((p: Player) => p.id === action.playerId);
+                if (awayPlayer) {
+                    awayPlayer.isAway = !awayPlayer.isAway;
+                }
+                break;
+
+            case 'RENAME_PLAYER':
+                const renamePlayer = newState.players.find((p: Player) => p.id === action.playerId);
+                if (renamePlayer) {
+                    renamePlayer.name = action.payload.name;
+                }
+                break;
+
             case 'START_GAME':
                 if (newState.phase !== 'lobby' && newState.phase !== 'finished') return;
                 newState.roundIndex = 0;
@@ -205,6 +263,13 @@ export default function Room() {
                 const better = newState.players[betterIndex];
 
                 if (newState.currentLeaderSeatIndex !== better.seatIndex) return;
+
+                // Server-side validation
+                const currentBets = newState.players
+                    .filter((p: Player) => p.currentBet !== null)
+                    .map((p: Player) => p.currentBet as number);
+
+                if (!canBet(action.payload.bet, currentBets, newState.players.length, newState.cardsPerPlayer)) return;
 
                 better.currentBet = action.payload.bet;
 
@@ -266,14 +331,23 @@ export default function Room() {
 
     const startRound = (state: GameState) => {
         const numPlayers = state.players.length;
-        state.cardsPerPlayer = Math.floor(52 / numPlayers) - state.roundIndex;
+        // Cap at 13 cards max, even if fewer players
+        const maxCards = Math.min(Math.floor(52 / numPlayers), 13);
+        state.cardsPerPlayer = maxCards - state.roundIndex;
 
-        if (state.cardsPerPlayer <= 5) {
+        if (state.cardsPerPlayer <= 0) { // Should be 1 -> 0? Or 1 -> End?
+            // User said: "When rounds decrease (10 cards -> 9 -> 8...), do we continue all the way down to 1 card per player and then stop?" -> "yes"
+            // So if cardsPerPlayer is 0, we stop.
             state.phase = 'finished';
             return;
         }
 
-        const { hands } = dealCards(numPlayers);
+        const { hands } = dealCards(numPlayers, {
+            seed: state.deckSeed + state.roundIndex, // Change seed per round
+            discardStrategy: state.settings.discardStrategy,
+            cardsPerPlayer: state.cardsPerPlayer
+        });
+
         state.players.forEach((p, i) => {
             p.hand = hands[i];
             p.currentBet = null;
@@ -282,7 +356,7 @@ export default function Room() {
 
         state.trump = ['spades', 'hearts', 'diamonds', 'clubs'][state.roundIndex % 4] as Suit;
         state.dealerSeatIndex = state.roundIndex % numPlayers;
-        state.currentLeaderSeatIndex = state.dealerSeatIndex;
+        state.currentLeaderSeatIndex = (state.dealerSeatIndex + 1) % numPlayers; // First to bet is left of dealer
         state.phase = 'betting';
         state.currentTrick = [];
     };
@@ -333,6 +407,15 @@ export default function Room() {
                     >
                         <Share2 className="w-4 h-4 text-white" />
                     </button>
+                    {isHost && (
+                        <button
+                            onClick={() => setShowSettings(true)}
+                            className="p-2 bg-white/5 rounded-full hover:bg-white/10 transition-colors"
+                            title="Host Settings"
+                        >
+                            <SettingsIcon className="w-4 h-4 text-white" />
+                        </button>
+                    )}
                 </div>
 
                 {gameState.phase !== 'lobby' && (
@@ -342,10 +425,29 @@ export default function Room() {
                     </div>
                 )}
 
-                <button onClick={() => setShowMobileMenu(!showMobileMenu)} className="md:hidden p-2">
-                    <Menu className="w-6 h-6" />
-                </button>
+                <div className="flex items-center space-x-2">
+                    {me && (
+                        <button
+                            onClick={() => sendAction({ type: 'TOGGLE_AWAY', playerId: myId })}
+                            className={clsx(
+                                "p-2 rounded-full transition-colors",
+                                me.isAway ? "bg-red-500/20 text-red-400" : "bg-white/5 text-slate-400 hover:bg-white/10"
+                            )}
+                            title={me.isAway ? "I'm Away" : "Mark as Away"}
+                        >
+                            {me.isAway ? <UserX className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
+                        </button>
+                    )}
+                    <button onClick={() => setShowMobileMenu(!showMobileMenu)} className="md:hidden p-2">
+                        <Menu className="w-6 h-6" />
+                    </button>
+                </div>
             </header>
+
+            {/* HUD */}
+            {gameState.phase !== 'lobby' && gameState.phase !== 'finished' && (
+                <GameHUD players={gameState.players} currentRound={gameState.roundIndex} />
+            )}
 
             {/* Game Area */}
             <main className="flex-grow relative flex flex-col md:flex-row items-center justify-center p-4 overflow-hidden">
@@ -511,6 +613,19 @@ export default function Room() {
                         players={gameState.players}
                         onPlayAgain={() => sendAction({ type: 'START_GAME', playerId: myId })}
                         isHost={!!me?.isHost}
+                    />
+                )}
+
+                {/* Host Settings Modal */}
+                {showSettings && gameState.settings && (
+                    <HostSettings
+                        isOpen={showSettings}
+                        onClose={() => setShowSettings(false)}
+                        currentSettings={gameState.settings}
+                        onSave={(newSettings) => {
+                            sendAction({ type: 'UPDATE_SETTINGS', playerId: myId, payload: newSettings });
+                            setShowSettings(false);
+                        }}
                     />
                 )}
             </AnimatePresence>

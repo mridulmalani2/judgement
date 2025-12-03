@@ -6,9 +6,7 @@
   --background: #0f172a;
   --foreground: #f8fafc;
   --surface: rgba(30, 41, 59, 0.7);
-  --primary: #818cf8;
-  --secondary: #94a3b8;
-  --accent: #f472b6;
+  /* Colors defined in tailwind.config.ts */
 }
 
 body {
