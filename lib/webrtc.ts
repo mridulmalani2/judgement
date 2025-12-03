@@ -25,11 +25,21 @@ export class PeerManager {
 
     public async start(): Promise<void> {
         return new Promise((resolve, reject) => {
-            // Use PeerJS cloud (free)
-            // We use a custom prefix to avoid collisions? 
-            // Actually, IDs are UUIDs, so collision unlikely.
+            // Use PeerJS cloud (free) with improved STUN/TURN configuration
+            // Multiple STUN servers for better NAT traversal
             this.peer = new Peer(this.myId, {
                 debug: 1,
+                config: {
+                    iceServers: [
+                        // Google's public STUN servers
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' },
+                        { urls: 'stun:stun2.l.google.com:19302' },
+                        // Additional public STUN servers for redundancy
+                        { urls: 'stun:stun.relay.metered.ca:80' },
+                    ],
+                    iceTransportPolicy: 'all', // Use both STUN and host candidates
+                },
             });
 
             this.peer.on('open', (id) => {
