@@ -5,9 +5,9 @@ import { Redis } from '@upstash/redis'
 // Falls back to in-memory storage if Redis is not configured (for local dev)
 const redis = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
   ? new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN,
-    })
+    url: process.env.UPSTASH_REDIS_REST_URL,
+    token: process.env.UPSTASH_REDIS_REST_TOKEN,
+  })
   : null
 
 // Fallback in-memory storage for local development
@@ -22,34 +22,53 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     if (req.method === 'POST') {
-      const msg = req.body
-      const signal = { msg, ts: Date.now() }
+      const { action, peerId, msg } = req.body
 
+      if (action === 'register_host') {
+        if (redis) {
+          await redis.set(`room:${room}:host`, peerId, { ex: 3600 }) // 1 hour expiry
+        } else {
+          (global as any).ROOM_HOSTS = (global as any).ROOM_HOSTS || {}
+            ; (global as any).ROOM_HOSTS[room] = peerId
+        }
+        return res.json({ ok: true })
+      }
+
+      // Default signaling message
+      const signal = { msg, ts: Date.now() }
       if (redis) {
-        // Use Redis for persistent storage
         const key = `signals:${room}`
         await redis.lpush(key, JSON.stringify(signal))
-        // Set expiry to 1 hour (signals are ephemeral)
         await redis.expire(key, 3600)
       } else {
-        // Fallback to in-memory storage
         SIGNALS[room] = SIGNALS[room] || []
         SIGNALS[room].push(signal)
       }
 
       return res.json({ ok: true })
     } else if (req.method === 'GET') {
-      let messages: any[] = []
+      const { action } = req.query
 
+      if (action === 'get_host') {
+        let hostId = null
+        if (redis) {
+          hostId = await redis.get(`room:${room}:host`)
+        } else {
+          hostId = ((global as any).ROOM_HOSTS || {})[room] || null
+        }
+
+        if (!hostId) return res.status(404).json({ error: 'Host not found' })
+        return res.json({ hostId })
+      }
+
+      // Default get signals
+      let messages: any[] = []
       if (redis) {
-        // Retrieve all signals from Redis
         const key = `signals:${room}`
         const signals = await redis.lrange(key, 0, -1) as string[]
         messages = signals.map(s => JSON.parse(s).msg).reverse()
-        // Clear signals after retrieval
         await redis.del(key)
       } else {
-        // Fallback to in-memory storage
         messages = (SIGNALS[room] || []).map(s => s.msg)
         SIGNALS[room] = []
       }
