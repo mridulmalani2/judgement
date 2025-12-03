@@ -1,0 +1,15 @@
+{
+    "title": "फैसलो",
+    "subtitle": "पारिवारिक कार्ड गेम",
+    "enterName": "अपना नाम दर्ज करें",
+    "createRoom": "नया कमरा बनाएं",
+    "orJoin": "या मौजूदा में शामिल हों",
+    "roomCode": "रूम कोड",
+    "howToPlay": "कैसे खेलें",
+    "settings": "सेटिंग्स",
+    "language": "भाषा",
+    "credits": {
+        "developedBy": "प्यार और Google AntiGravity के साथ विकसित किया गया",
+        "dedication": "घर पर दादा-दादी के लिए, और जब उन्हें मुन्नू की याद आती है।"
+    }
+}

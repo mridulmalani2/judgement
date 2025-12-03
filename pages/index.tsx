@@ -1,128 +1,171 @@
-import Head from 'next/head';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
+import Head from 'next/head';
 import { v4 as uuidv4 } from 'uuid';
 import { motion } from 'framer-motion';
-import { Play, Users, Settings, Globe } from 'lucide-react';
+import { Play, Users, BookOpen, Volume2, VolumeX, Globe } from 'lucide-react';
+import Credits from '../components/Credits';
+import HowToPlay from '../components/HowToPlay';
+import '../lib/i18n'; // Import i18n config
+import { useTranslation } from 'react-i18next';
 
 export default function Home() {
   const router = useRouter();
+  const { t, i18n } = useTranslation('common');
   const [name, setName] = useState('');
-  const [joinCode, setJoinCode] = useState('');
-  const [isCreating, setIsCreating] = useState(false);
+  const [roomCode, setRoomCode] = useState('');
+  const [showHowToPlay, setShowHowToPlay] = useState(false);
+  const [isPlayingMusic, setIsPlayingMusic] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const createGame = async () => {
-    if (!name) return alert('Please enter your name');
-    setIsCreating(true);
+  useEffect(() => {
+    const storedName = localStorage.getItem('judgment_name');
+    if (storedName) setName(storedName);
 
-    // Generate code locally (PeerJS handles the rest)
-    const roomCode = Math.floor(100 + Math.random() * 900).toString();
+    // Initialize Audio
+    audioRef.current = new Audio('/music/background.mp3'); // Placeholder path
+    audioRef.current.loop = true;
+    audioRef.current.volume = 0.3;
 
-    localStorage.setItem('judgment_name', name);
-    if (!localStorage.getItem('judgment_id')) localStorage.setItem('judgment_id', uuidv4());
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
+  }, []);
 
-    router.push(`/room/${roomCode}?host=true`);
+  const toggleMusic = () => {
+    if (!audioRef.current) return;
+    if (isPlayingMusic) {
+      audioRef.current.pause();
+    } else {
+      audioRef.current.play().catch(e => console.log("Audio play failed:", e));
+    }
+    setIsPlayingMusic(!isPlayingMusic);
   };
 
-  const joinGame = () => {
-    if (!name) return alert('Please enter your name');
-    if (!joinCode || joinCode.length !== 3) return alert('Please enter a valid 3-digit code');
+  const toggleLanguage = () => {
+    const newLang = i18n.language === 'en' ? 'hi' : 'en';
+    i18n.changeLanguage(newLang);
+  };
 
+  const createRoom = () => {
+    if (!name) return alert(t('enterName'));
     localStorage.setItem('judgment_name', name);
-    if (!localStorage.getItem('judgment_id')) localStorage.setItem('judgment_id', uuidv4());
+    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    router.push(`/room/${code}?host=true`);
+  };
 
-    router.push(`/room/${joinCode}`);
+  const joinRoom = () => {
+    if (!name) return alert(t('enterName'));
+    if (!roomCode) return alert(t('roomCode'));
+    localStorage.setItem('judgment_name', name);
+    router.push(`/room/${roomCode}`);
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4 text-foreground bg-[url('/bg-texture.png')] bg-cover">
+    <div className="min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden">
       <Head>
-        <title>Judgment - Premium Card Game</title>
+        <title>Judgment - {t('subtitle')}</title>
       </Head>
 
-      <main className="w-full max-w-md space-y-8 text-center relative z-10">
-        <motion.div
-          initial={{ y: -50, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ duration: 0.8 }}
+      {/* Background Effects */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-900 via-[#0f172a] to-black -z-10"></div>
+      <div className="absolute top-0 left-0 w-full h-full overflow-hidden -z-10 opacity-20">
+        <div className="absolute top-10 left-10 w-72 h-72 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl animate-blob"></div>
+        <div className="absolute top-10 right-10 w-72 h-72 bg-yellow-500 rounded-full mix-blend-multiply filter blur-xl animate-blob animation-delay-2000"></div>
+        <div className="absolute -bottom-8 left-20 w-72 h-72 bg-pink-500 rounded-full mix-blend-multiply filter blur-xl animate-blob animation-delay-4000"></div>
+      </div>
+
+      {/* Controls: Music & Language */}
+      <div className="absolute top-4 right-4 flex gap-2 z-20">
+        <button
+          onClick={toggleLanguage}
+          className="p-3 bg-white/5 hover:bg-white/10 rounded-full transition-colors flex items-center justify-center"
+          title="Switch Language"
         >
-          <h1 className="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 mb-2 drop-shadow-lg">
-            Judgment
+          <span className="text-xs font-bold text-white">{i18n.language === 'en' ? 'HI' : 'EN'}</span>
+        </button>
+        <button
+          onClick={toggleMusic}
+          className="p-3 bg-white/5 hover:bg-white/10 rounded-full transition-colors"
+          title={isPlayingMusic ? "Pause Music" : "Play Music"}
+        >
+          {isPlayingMusic ? <Volume2 className="w-5 h-5 text-primary" /> : <VolumeX className="w-5 h-5 text-slate-400" />}
+        </button>
+      </div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="glass-panel p-8 w-full max-w-md text-center relative z-10"
+      >
+        <div className="mb-8">
+          <h1 className="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 mb-2">
+            {t('title')}
           </h1>
-          <p className="text-xl text-slate-300 font-light tracking-wide">The Classic Family Card Game</p>
-        </motion.div>
+          <h2 className="text-3xl font-serif text-yellow-500 font-bold tracking-wider">
+            फैसलो
+          </h2>
+          <p className="text-slate-400 mt-2">{t('subtitle')}</p>
+        </div>
 
-        <motion.div
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ delay: 0.2 }}
-          className="glass-panel p-8 space-y-6 border-t border-white/10"
-        >
-          <div className="space-y-2 text-left">
-            <label className="block text-sm font-bold text-slate-400 uppercase tracking-wider ml-1">Your Name</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full p-4 rounded-2xl bg-black/30 border border-white/10 focus:border-primary focus:ring-2 focus:ring-primary/50 outline-none text-xl text-white placeholder-slate-600 transition-all"
-              placeholder="Enter your name..."
-            />
-          </div>
+        <div className="space-y-4">
+          <input
+            type="text"
+            placeholder={t('enterName')}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all text-center text-lg"
+          />
 
-          <div className="grid grid-cols-1 gap-4 pt-4">
+          <div className="grid grid-cols-1 gap-3">
             <button
-              onClick={createGame}
-              disabled={isCreating}
-              className="group w-full py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-xl font-bold rounded-2xl hover:shadow-lg hover:shadow-indigo-500/30 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center space-x-3"
+              onClick={createRoom}
+              className="w-full py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition-all flex items-center justify-center gap-2 group"
             >
-              <Play className="w-6 h-6 fill-current" />
-              <span>Create New Game</span>
+              <Play className="w-5 h-5 fill-current group-hover:scale-110 transition-transform" /> {t('createRoom')}
             </button>
 
-            <div className="relative flex py-2 items-center">
-              <div className="flex-grow border-t border-white/10"></div>
-              <span className="flex-shrink mx-4 text-slate-500 text-sm font-bold">OR JOIN</span>
-              <div className="flex-grow border-t border-white/10"></div>
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-white/10"></div>
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-[#1e293b] px-2 text-slate-500">{t('orJoin')}</span>
+              </div>
             </div>
 
-            <div className="flex space-x-3">
+            <div className="flex gap-2">
               <input
                 type="text"
-                value={joinCode}
-                onChange={(e) => setJoinCode(e.target.value)}
-                className="flex-1 p-4 rounded-2xl bg-black/30 border border-white/10 focus:border-primary focus:ring-2 focus:ring-primary/50 outline-none text-xl text-center tracking-[0.5em] font-mono text-white placeholder-slate-700"
-                placeholder="000"
-                maxLength={3}
+                placeholder={t('roomCode')}
+                value={roomCode}
+                onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+                className="flex-1 bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all text-center uppercase tracking-widest font-mono"
               />
               <button
-                onClick={joinGame}
-                className="flex-1 py-4 bg-white/5 border border-white/10 text-white text-xl font-bold rounded-2xl hover:bg-white/10 hover:border-white/30 active:scale-95 transition-all flex items-center justify-center space-x-2"
+                onClick={joinRoom}
+                className="px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl transition-all flex items-center justify-center"
               >
                 <Users className="w-5 h-5" />
-                <span>Join</span>
               </button>
             </div>
           </div>
-        </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.5 }}
-          className="flex justify-center space-x-6 text-slate-500"
-        >
-          <button className="hover:text-white transition-colors flex items-center space-x-1">
-            <Settings className="w-4 h-4" />
-            <span>Settings</span>
+          <button
+            onClick={() => setShowHowToPlay(true)}
+            className="mt-4 text-sm text-slate-400 hover:text-white flex items-center justify-center gap-1 mx-auto transition-colors"
+          >
+            <BookOpen className="w-4 h-4" /> {t('howToPlay')}
           </button>
-          <button className="hover:text-white transition-colors flex items-center space-x-1">
-            <Globe className="w-4 h-4" />
-            <span>English</span>
-          </button>
-        </motion.div>
-      </main>
+        </div>
 
-      <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent pointer-events-none"></div>
+        <Credits />
+      </motion.div>
+
+      <HowToPlay isOpen={showHowToPlay} onClose={() => setShowHowToPlay(false)} />
     </div>
   );
 }

@@ -1,0 +1,15 @@
+{
+    "title": "Judgment",
+    "subtitle": "The Classic Family Card Game",
+    "enterName": "Enter your name",
+    "createRoom": "Create New Room",
+    "orJoin": "Or join existing",
+    "roomCode": "Room Code",
+    "howToPlay": "How to Play",
+    "settings": "Settings",
+    "language": "Language",
+    "credits": {
+        "developedBy": "Developed with love and Google AntiGravity by",
+        "dedication": "For the grandparents back home, and jab unhe munnu ki yaad aati hain."
+    }
+}
