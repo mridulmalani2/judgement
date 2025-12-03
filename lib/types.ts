@@ -47,8 +47,13 @@ export interface GameState {
     settings: GameSettings;
 }
 
-export interface GameAction {
-    type: 'JOIN' | 'START_GAME' | 'BET' | 'PLAY_CARD' | 'NEXT_ROUND' | 'END_GAME' | 'KICK_PLAYER' | 'TOGGLE_AWAY' | 'UPDATE_SETTINGS' | 'RENAME_PLAYER';
-    payload?: any;
-    playerId: string;
-}
+export type GameAction =
+    | { type: 'START_GAME' }
+    | { type: 'BET', playerId: string, bet: number }
+    | { type: 'PLAY_CARD', playerId: string, card: Card }
+    | { type: 'NEXT_ROUND' }
+    | { type: 'UPDATE_SETTINGS', settings: Partial<GameSettings> }
+    | { type: 'TOGGLE_AWAY', playerId: string }
+    | { type: 'RENAME_PLAYER', playerId: string, newName: string }
+    | { type: 'END_GAME' }
+    | { type: 'JOIN', playerId: string, payload: { name: string } };

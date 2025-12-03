@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { v4 as uuidv4 } from 'uuid';
 import { motion } from 'framer-motion';
-import { Play, Users, BookOpen, Volume2, VolumeX, Globe } from 'lucide-react';
+import { Play, Users, BookOpen } from 'lucide-react';
 import Credits from '../components/Credits';
 import HowToPlay from '../components/HowToPlay';
 import '../lib/i18n'; // Import i18n config
@@ -11,44 +11,15 @@ import { useTranslation } from 'react-i18next';
 
 export default function Home() {
   const router = useRouter();
-  const { t, i18n } = useTranslation('common');
+  const { t } = useTranslation('common');
   const [name, setName] = useState('');
   const [roomCode, setRoomCode] = useState('');
   const [showHowToPlay, setShowHowToPlay] = useState(false);
-  const [isPlayingMusic, setIsPlayingMusic] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     const storedName = localStorage.getItem('judgment_name');
     if (storedName) setName(storedName);
-
-    // Initialize Audio
-    audioRef.current = new Audio('/music/background.mp3'); // Placeholder path
-    audioRef.current.loop = true;
-    audioRef.current.volume = 0.3;
-
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
-    };
   }, []);
-
-  const toggleMusic = () => {
-    if (!audioRef.current) return;
-    if (isPlayingMusic) {
-      audioRef.current.pause();
-    } else {
-      audioRef.current.play().catch(e => console.log("Audio play failed:", e));
-    }
-    setIsPlayingMusic(!isPlayingMusic);
-  };
-
-  const toggleLanguage = () => {
-    const newLang = i18n.language === 'en' ? 'hi' : 'en';
-    i18n.changeLanguage(newLang);
-  };
 
   const createRoom = () => {
     if (!name) return alert(t('enterName'));
@@ -78,24 +49,6 @@ export default function Home() {
         <div className="absolute -bottom-8 left-20 w-72 h-72 bg-pink-500 rounded-full mix-blend-multiply filter blur-xl animate-blob animation-delay-4000"></div>
       </div>
 
-      {/* Controls: Music & Language */}
-      <div className="absolute top-4 right-4 flex gap-2 z-20">
-        <button
-          onClick={toggleLanguage}
-          className="p-3 bg-white/5 hover:bg-white/10 rounded-full transition-colors flex items-center justify-center"
-          title="Switch Language"
-        >
-          <span className="text-xs font-bold text-white">{i18n.language === 'en' ? 'HI' : 'EN'}</span>
-        </button>
-        <button
-          onClick={toggleMusic}
-          className="p-3 bg-white/5 hover:bg-white/10 rounded-full transition-colors"
-          title={isPlayingMusic ? "Pause Music" : "Play Music"}
-        >
-          {isPlayingMusic ? <Volume2 className="w-5 h-5 text-primary" /> : <VolumeX className="w-5 h-5 text-slate-400" />}
-        </button>
-      </div>
-
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -105,7 +58,7 @@ export default function Home() {
           <h1 className="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 mb-2">
             {t('title')}
           </h1>
-          <h2 className="text-3xl font-serif text-yellow-500 font-bold tracking-wider">
+          <h2 className="text-3xl text-yellow-500 font-bold tracking-wider">
             फैसलो
           </h2>
           <p className="text-slate-400 mt-2">{t('subtitle')}</p>

@@ -20,6 +20,10 @@ const config: Config = {
                 '2xl': '1rem',
                 '3xl': '1.5rem',
             },
+            fontFamily: {
+                sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+                heading: ['"Outfit"', 'sans-serif'],
+            },
         },
     },
     plugins: [],

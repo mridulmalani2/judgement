@@ -4,7 +4,7 @@ import Head from 'next/head';
 import { v4 as uuidv4 } from 'uuid';
 import { PeerManager } from '../../lib/webrtc';
 import { GameState, Player, Card, GameAction, Suit, GameSettings } from '../../lib/types';
-import { dealCards } from '../../lib/deck';
+import { createDeck, shuffleDeck, dealCards } from '../../lib/deck';
 import { getTrickWinner, isValidPlay, calculateScores, canBet, getAutoPlayCard } from '../../lib/gameEngine';
 import PlayerSeat from '../../components/PlayerSeat';
 import Hand from '../../components/Hand';
@@ -186,12 +186,12 @@ export default function Room() {
                 if (!canBet(bet, currentBets, gameState.players.length, gameState.cardsPerPlayer)) {
                     bet = 1;
                 }
-                processAction({ type: 'BET', playerId: currentPlayer.id, payload: { bet } });
+                processAction({ type: 'BET', playerId: currentPlayer.id, bet });
             } else if (gameState.phase === 'playing') {
                 // Auto Play Card
                 try {
                     const card = getAutoPlayCard(currentPlayer.hand, gameState.currentTrick, gameState.trump);
-                    processAction({ type: 'PLAY_CARD', playerId: currentPlayer.id, payload: { card } });
+                    processAction({ type: 'PLAY_CARD', playerId: currentPlayer.id, card });
                 } catch (e) {
                     console.error("Autoplay error", e);
                 }
@@ -201,143 +201,13 @@ export default function Room() {
         return () => clearTimeout(timer);
     }, [gameState, isHost]);
 
-    const processAction = (action: GameAction) => {
-        const currentState = gameStateRef.current;
-        if (!currentState) return;
-
-        let newState = JSON.parse(JSON.stringify(currentState)); // Deep copy
-
-        switch (action.type) {
-            case 'JOIN':
-                if (newState.players.some((p: Player) => p.id === action.playerId)) {
-                    const p = newState.players.find((p: Player) => p.id === action.playerId);
-                    if (p) p.connected = true;
-                } else {
-                    const newPlayer: Player = {
-                        id: action.playerId,
-                        name: action.payload.name,
-                        seatIndex: newState.players.length,
-                        isHost: false,
-                        connected: true,
-                        isAway: false,
-                        currentBet: null,
-                        tricksWon: 0,
-                        totalPoints: 0,
-                        hand: []
-                    };
-                    newState.players.push(newPlayer);
-                }
-                break;
-
-            case 'UPDATE_SETTINGS':
-                if (newState.phase === 'lobby') {
-                    newState.settings = action.payload;
-                }
-                break;
-
-            case 'TOGGLE_AWAY':
-                const awayPlayer = newState.players.find((p: Player) => p.id === action.playerId);
-                if (awayPlayer) {
-                    awayPlayer.isAway = !awayPlayer.isAway;
-                }
-                break;
-
-            case 'RENAME_PLAYER':
-                const renamePlayer = newState.players.find((p: Player) => p.id === action.playerId);
-                if (renamePlayer) {
-                    renamePlayer.name = action.payload.name;
-                }
-                break;
-
-            case 'START_GAME':
-                if (newState.phase !== 'lobby' && newState.phase !== 'finished') return;
-                newState.roundIndex = 0;
-                newState.scoresHistory = [];
-                newState.players.forEach((p: Player) => { p.totalPoints = 0; p.tricksWon = 0; p.currentBet = null; });
-                startRound(newState);
-                break;
-
-            case 'BET':
-                const betterIndex = newState.players.findIndex((p: Player) => p.id === action.playerId);
-                if (betterIndex === -1) return;
-                const better = newState.players[betterIndex];
-
-                if (newState.currentLeaderSeatIndex !== better.seatIndex) return;
-
-                // Server-side validation
-                const currentBets = newState.players
-                    .filter((p: Player) => p.currentBet !== null)
-                    .map((p: Player) => p.currentBet as number);
-
-                if (!canBet(action.payload.bet, currentBets, newState.players.length, newState.cardsPerPlayer)) return;
-
-                better.currentBet = action.payload.bet;
-
-                const allBet = newState.players.every((p: Player) => p.currentBet !== null);
-                if (allBet) {
-                    newState.phase = 'playing';
-                    newState.currentLeaderSeatIndex = (newState.dealerSeatIndex + 1) % newState.players.length;
-                } else {
-                    newState.currentLeaderSeatIndex = (newState.currentLeaderSeatIndex + 1) % newState.players.length;
-                }
-                break;
-
-            case 'PLAY_CARD':
-                const pIndex = newState.players.findIndex((p: Player) => p.id === action.playerId);
-                if (pIndex === -1) return;
-                const p = newState.players[pIndex];
-
-                if (newState.currentLeaderSeatIndex !== p.seatIndex) return;
-
-                const card = action.payload.card;
-                const handIndex = p.hand.findIndex((c: Card) => c.id === card.id);
-                if (handIndex === -1) return;
-
-                if (!isValidPlay(card, p.hand, newState.currentTrick, newState.trump)) return;
-
-                p.hand.splice(handIndex, 1);
-                newState.currentTrick.push({ seatIndex: p.seatIndex, card });
-
-                if (newState.currentTrick.length === newState.players.length) {
-                    const winnerSeat = getTrickWinner(newState.currentTrick, newState.trump);
-                    const winner = newState.players.find((pl: Player) => pl.seatIndex === winnerSeat);
-                    if (winner) {
-                        winner.tricksWon++;
-                        newState.currentLeaderSeatIndex = winnerSeat;
-                    }
-
-                    // Delay clearing trick? 
-                    // We can add a timestamp to trick to let clients know when it finished.
-                    // For now, immediate clear.
-                    newState.currentTrick = [];
-
-                    if (newState.players[0].hand.length === 0) {
-                        const scores = calculateScores(newState.players);
-                        newState.players.forEach((pl: Player) => {
-                            pl.totalPoints += scores[pl.id];
-                        });
-                        newState.roundIndex++;
-                        startRound(newState);
-                    }
-                } else {
-                    newState.currentLeaderSeatIndex = (newState.currentLeaderSeatIndex + 1) % newState.players.length;
-                }
-                break;
-        }
-
-        setGameState(newState);
-        peerManager?.broadcast({ type: 'STATE_UPDATE', state: newState });
-    };
-
     const startRound = (state: GameState) => {
         const numPlayers = state.players.length;
         // Cap at 13 cards max, even if fewer players
         const maxCards = Math.min(Math.floor(52 / numPlayers), 13);
         state.cardsPerPlayer = maxCards - state.roundIndex;
 
-        if (state.cardsPerPlayer <= 0) { // Should be 1 -> 0? Or 1 -> End?
-            // User said: "When rounds decrease (10 cards -> 9 -> 8...), do we continue all the way down to 1 card per player and then stop?" -> "yes"
-            // So if cardsPerPlayer is 0, we stop.
+        if (state.cardsPerPlayer <= 0) {
             state.phase = 'finished';
             return;
         }
@@ -360,6 +230,159 @@ export default function Room() {
         state.phase = 'betting';
         state.currentTrick = [];
     };
+
+    const processAction = (action: GameAction) => {
+        const currentState = gameStateRef.current;
+        if (!currentState) return;
+
+        let newState: GameState = JSON.parse(JSON.stringify(currentState)); // Deep copy
+
+        switch (action.type) {
+            case 'JOIN':
+                // Cast to any to handle custom JOIN action
+                const joinAction = action as any;
+                if (newState.players.some((p: Player) => p.id === joinAction.playerId)) {
+                    const p = newState.players.find((p: Player) => p.id === joinAction.playerId);
+                    if (p) p.connected = true;
+                } else {
+                    const newPlayer: Player = {
+                        id: joinAction.playerId,
+                        name: joinAction.payload.name,
+                        seatIndex: newState.players.length,
+                        isHost: false,
+                        connected: true,
+                        isAway: false,
+                        currentBet: null,
+                        tricksWon: 0,
+                        totalPoints: 0,
+                        hand: []
+                    };
+                    newState.players.push(newPlayer);
+                }
+                setGameState(newState);
+                peerManager?.broadcast({ type: 'STATE_UPDATE', state: newState });
+                break;
+
+            case 'START_GAME':
+                if (newState.phase !== 'lobby' && newState.phase !== 'finished') return;
+                newState.roundIndex = 0;
+                newState.scoresHistory = [];
+                newState.players.forEach((p: Player) => { p.totalPoints = 0; p.tricksWon = 0; p.currentBet = null; });
+                startRound(newState);
+                setGameState(newState);
+                peerManager?.broadcast({ type: 'STATE_UPDATE', state: newState });
+                break;
+
+            case 'BET':
+                const betterIndex = newState.players.findIndex((p: Player) => p.id === action.playerId);
+                if (betterIndex === -1) return;
+                const playerIndex = newState.players.findIndex(p => p.id === action.playerId);
+                if (playerIndex === -1) return;
+
+                // Validate bet
+                if (!canBet(action.bet, newState.players.map(p => p.currentBet || 0).slice(0, playerIndex), newState.players.length, newState.cardsPerPlayer)) {
+                    return; // Invalid bet
+                }
+
+                newState.players[playerIndex].currentBet = action.bet;
+
+                // Move turn
+                newState.currentLeaderSeatIndex = (newState.currentLeaderSeatIndex + 1) % newState.players.length;
+
+                // Check if all bets placed
+                const allBetsPlaced = newState.players.every(p => p.currentBet !== null);
+                if (allBetsPlaced) {
+                    newState.phase = 'playing';
+                    // Leader is left of dealer
+                    newState.currentLeaderSeatIndex = (newState.dealerSeatIndex + 1) % newState.players.length;
+                }
+
+                setGameState(newState);
+                peerManager?.broadcast({ type: 'STATE_UPDATE', state: newState });
+                break;
+
+            case 'PLAY_CARD':
+                const pIndex = newState.players.findIndex(p => p.id === action.playerId);
+                if (pIndex === -1) return;
+
+                const player = newState.players[pIndex];
+                const card = action.card;
+
+                // Validate play
+                if (!isValidPlay(card, player.hand, newState.currentTrick, newState.trump)) {
+                    return; // Invalid play
+                }
+
+                // Remove card from hand
+                player.hand = player.hand.filter(c => !(c.suit === card.suit && c.rank === card.rank));
+
+                // Add to trick
+                newState.currentTrick.push({ seatIndex: pIndex, card: card });
+
+                // Move turn
+                newState.currentLeaderSeatIndex = (newState.currentLeaderSeatIndex + 1) % newState.players.length;
+
+                // Check if trick complete
+                if (newState.currentTrick.length === newState.players.length) {
+                    // Determine winner
+                    const winnerSeatIndex = getTrickWinner(newState.currentTrick, newState.trump);
+
+                    // Update tricks won
+                    newState.players[winnerSeatIndex].tricksWon = (newState.players[winnerSeatIndex].tricksWon || 0) + 1;
+
+                    newState.currentTrick = [];
+                    newState.currentLeaderSeatIndex = winnerSeatIndex;
+
+                    // Check if round complete (hands empty)
+                    if (newState.players[0].hand.length === 0) {
+                        // Calculate scores
+                        const roundScores = calculateScores(newState.players);
+                        newState.players.forEach(p => {
+                            p.totalPoints = (p.totalPoints || 0) + (roundScores[p.id] || 0);
+                        });
+
+                        // Next round logic
+                        newState.roundIndex++;
+                        startRound(newState);
+                    }
+                }
+                setGameState(newState);
+                peerManager?.broadcast({ type: 'STATE_UPDATE', state: newState });
+                break;
+
+            case 'UPDATE_SETTINGS':
+                const updateSettingsAction = action as { type: 'UPDATE_SETTINGS', settings: Partial<GameSettings> };
+                newState.settings = { ...newState.settings, ...updateSettingsAction.settings };
+                setGameState(newState);
+                peerManager?.broadcast({ type: 'STATE_UPDATE', state: newState });
+                break;
+
+            case 'TOGGLE_AWAY':
+                const awayPlayer = newState.players.find((p: Player) => p.id === action.playerId);
+                if (awayPlayer) {
+                    awayPlayer.isAway = !awayPlayer.isAway;
+                    setGameState(newState);
+                    peerManager?.broadcast({ type: 'STATE_UPDATE', state: newState });
+                }
+                break;
+
+            case 'RENAME_PLAYER':
+                const renamePlayer = newState.players.find((p: Player) => p.id === action.playerId);
+                if (renamePlayer) {
+                    renamePlayer.name = action.newName;
+                    setGameState(newState);
+                    peerManager?.broadcast({ type: 'STATE_UPDATE', state: newState });
+                }
+                break;
+
+            case 'END_GAME':
+                newState.phase = 'finished';
+                setGameState(newState);
+                peerManager?.broadcast({ type: 'STATE_UPDATE', state: newState });
+                break;
+        }
+    };
+
 
     // UI Rendering
     if (!gameState) return (
@@ -391,63 +414,50 @@ export default function Room() {
             <Head><title>Room {roomCode}</title></Head>
 
             {/* Top Bar */}
-            <header className="glass p-4 flex justify-between items-center z-20 relative">
-                <div className="flex items-center space-x-4">
-                    <div className="flex flex-col">
-                        <h1 className="text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">
-                            Room {roomCode}
-                        </h1>
-                        <span className="text-xs text-slate-400">
-                            {gameState.phase === 'lobby' ? 'Lobby' : `Round ${gameState.roundIndex + 1}`}
-                        </span>
-                    </div>
-                    <button
-                        onClick={() => navigator.clipboard.writeText(window.location.href)}
-                        className="p-2 bg-white/5 rounded-full hover:bg-white/10 transition-colors"
-                    >
-                        <Share2 className="w-4 h-4 text-white" />
+            <header className="p-4 flex justify-between items-center bg-black/20 backdrop-blur-sm z-20">
+                <div className="flex items-center gap-4">
+                    <button onClick={() => router.push('/')} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                        <Menu className="w-6 h-6 text-white" />
                     </button>
-                    {isHost && (
-                        <button
-                            onClick={() => setShowSettings(true)}
-                            className="p-2 bg-white/5 rounded-full hover:bg-white/10 transition-colors"
-                            title="Host Settings"
-                        >
-                            <SettingsIcon className="w-4 h-4 text-white" />
-                        </button>
-                    )}
+                    <div>
+                        <h1 className="text-xl font-bold text-white leading-none">Room {roomCode}</h1>
+                        <div className="text-xs text-slate-400 flex items-center gap-1">
+                            <span className={clsx("w-2 h-2 rounded-full", connectionStatus === 'connected' ? "bg-green-500" : "bg-red-500")}></span>
+                            {connectionStatus === 'connected' ? 'Connected' : 'Connecting...'}
+                        </div>
+                    </div>
                 </div>
 
-                {gameState.phase !== 'lobby' && (
-                    <div className="flex items-center space-x-2 bg-black/30 px-3 py-1 rounded-full border border-white/10">
-                        <span className="text-xs text-slate-300 uppercase tracking-wider">Trump</span>
-                        <span className="font-bold text-primary capitalize">{gameState.trump}</span>
-                    </div>
-                )}
-
-                <div className="flex items-center space-x-2">
-                    {me && (
-                        <button
-                            onClick={() => sendAction({ type: 'TOGGLE_AWAY', playerId: myId })}
-                            className={clsx(
-                                "p-2 rounded-full transition-colors",
-                                me.isAway ? "bg-red-500/20 text-red-400" : "bg-white/5 text-slate-400 hover:bg-white/10"
-                            )}
-                            title={me.isAway ? "I'm Away" : "Mark as Away"}
-                        >
-                            {me.isAway ? <UserX className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
-                        </button>
+                <div className="flex items-center gap-2">
+                    {me?.isHost && (
+                        <>
+                            <button
+                                onClick={() => setShowSettings(true)}
+                                className="p-2 hover:bg-white/10 rounded-full transition-colors"
+                                title="Settings"
+                            >
+                                <SettingsIcon className="w-5 h-5 text-slate-300" />
+                            </button>
+                            <button
+                                onClick={() => sendAction({ type: 'END_GAME' })}
+                                className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 text-xs font-bold rounded-full border border-red-500/30 transition-colors"
+                            >
+                                End Game
+                            </button>
+                        </>
                     )}
-                    <button onClick={() => setShowMobileMenu(!showMobileMenu)} className="md:hidden p-2">
-                        <Menu className="w-6 h-6" />
+                    <button
+                        onClick={() => {
+                            navigator.clipboard.writeText(window.location.href);
+                            // Toast?
+                        }}
+                        className="p-2 hover:bg-white/10 rounded-full transition-colors"
+                        title="Copy Link"
+                    >
+                        <Copy className="w-5 h-5 text-slate-300" />
                     </button>
                 </div>
             </header>
-
-            {/* HUD */}
-            {gameState.phase !== 'lobby' && gameState.phase !== 'finished' && (
-                <GameHUD players={gameState.players} currentRound={gameState.roundIndex} />
-            )}
 
             {/* Game Area */}
             <main className="flex-grow relative flex flex-col md:flex-row items-center justify-center p-4 overflow-hidden">
@@ -533,7 +543,6 @@ export default function Room() {
             <footer className="relative z-20 pb-safe">
                 {me && (
                     <div className="flex flex-col items-center">
-                        {/* My Seat Info (Mobile Only - Desktop has it in circle? No, desktop usually puts "Me" at bottom) */}
                         <div className="mb-2">
                             <PlayerSeat
                                 player={me}
@@ -547,7 +556,7 @@ export default function Room() {
                         <div className="w-full max-w-4xl px-4 overflow-x-auto no-scrollbar pb-4">
                             <Hand
                                 cards={me.hand}
-                                onPlayCard={(card) => sendAction({ type: 'PLAY_CARD', playerId: myId, payload: { card } })}
+                                onPlayCard={(card) => sendAction({ type: 'PLAY_CARD', playerId: myId, card })}
                                 playableCards={me.hand} // Todo: Filter
                                 myTurn={isMyTurn}
                             />
@@ -578,7 +587,7 @@ export default function Room() {
                             </div>
 
                             <button
-                                onClick={() => sendAction({ type: 'START_GAME', playerId: myId })}
+                                onClick={() => sendAction({ type: 'START_GAME' })}
                                 className="w-full py-4 bg-primary text-white font-bold rounded-2xl text-xl shadow-lg shadow-primary/30 hover:shadow-primary/50 transition-all"
                             >
                                 Start Game
@@ -604,14 +613,15 @@ export default function Room() {
                     <BetInput
                         maxBet={gameState.cardsPerPlayer}
                         forbiddenBet={forbiddenBet}
-                        onPlaceBet={(bet) => sendAction({ type: 'BET', playerId: myId, payload: { bet } })}
+                        onPlaceBet={(bet) => sendAction({ type: 'BET', playerId: myId, bet })}
                     />
                 )}
 
                 {gameState.phase === 'finished' && (
                     <Leaderboard
                         players={gameState.players}
-                        onPlayAgain={() => sendAction({ type: 'START_GAME', playerId: myId })}
+                        scores={gameState.players.reduce((acc, p) => ({ ...acc, [p.id]: p.totalPoints }), {})}
+                        onPlayAgain={() => sendAction({ type: 'START_GAME' })}
                         isHost={!!me?.isHost}
                     />
                 )}
@@ -623,7 +633,7 @@ export default function Room() {
                         onClose={() => setShowSettings(false)}
                         currentSettings={gameState.settings}
                         onSave={(newSettings) => {
-                            sendAction({ type: 'UPDATE_SETTINGS', playerId: myId, payload: newSettings });
+                            sendAction({ type: 'UPDATE_SETTINGS', settings: newSettings });
                             setShowSettings(false);
                         }}
                     />

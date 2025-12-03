@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, BookOpen } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 
 interface HowToPlayProps {
     isOpen: boolean;
@@ -8,6 +9,8 @@ interface HowToPlayProps {
 }
 
 export default function HowToPlay({ isOpen, onClose }: HowToPlayProps) {
+    const { t, i18n } = useTranslation('common');
+
     return (
         <AnimatePresence>
             {isOpen && (
@@ -20,46 +23,53 @@ export default function HowToPlay({ isOpen, onClose }: HowToPlayProps) {
                     >
                         <div className="p-6 border-b border-white/10 flex justify-between items-center bg-white/5">
                             <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                                <BookOpen className="w-6 h-6 text-primary" /> How to Play
+                                <BookOpen className="w-6 h-6 text-primary" /> {t('howToPlayContent.title')}
                             </h2>
-                            <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors">
-                                <X className="w-6 h-6 text-slate-400" />
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => i18n.changeLanguage(i18n.language === 'en' ? 'hi' : 'en')}
+                                    className="px-3 py-1 bg-white/10 hover:bg-white/20 rounded-full text-sm font-bold text-white transition-colors"
+                                >
+                                    {i18n.language === 'en' ? 'हिंदी' : 'English'}
+                                </button>
+                                <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                                    <X className="w-6 h-6 text-slate-400" />
+                                </button>
+                            </div>
                         </div>
 
                         <div className="p-6 overflow-y-auto space-y-6 text-slate-300 leading-relaxed">
                             <section>
-                                <h3 className="text-lg font-bold text-white mb-2">Objective</h3>
+                                <h3 className="text-lg font-bold text-white mb-2">{t('howToPlayContent.objective.title')}</h3>
                                 <p>
-                                    Judgment (or Kaach-Paani) is a trick-taking game where you must predict exactly how many tricks you will win in each round.
+                                    {t('howToPlayContent.objective.text')}
                                 </p>
                             </section>
 
                             <section>
-                                <h3 className="text-lg font-bold text-white mb-2">Game Flow</h3>
+                                <h3 className="text-lg font-bold text-white mb-2">{t('howToPlayContent.flow.title')}</h3>
                                 <ul className="list-disc list-inside space-y-2 marker:text-primary">
-                                    <li>The game consists of multiple rounds with varying numbers of cards (e.g., 7, 6, 5...).</li>
-                                    <li>In each round, a <strong>Trump suit</strong> is determined (Spades, Hearts, Diamonds, Clubs).</li>
-                                    <li>After cards are dealt, each player makes a <strong>Bet</strong> (Judgment) on how many tricks they will win.</li>
-                                    <li><strong>Important:</strong> The total bets cannot equal the total number of tricks available! The last player (Dealer) has restricted options.</li>
+                                    {(t('howToPlayContent.flow.points', { returnObjects: true }) as string[]).map((point, i) => (
+                                        <li key={i}>{point}</li>
+                                    ))}
                                 </ul>
                             </section>
 
                             <section>
-                                <h3 className="text-lg font-bold text-white mb-2">Playing Tricks</h3>
+                                <h3 className="text-lg font-bold text-white mb-2">{t('howToPlayContent.playing.title')}</h3>
                                 <ul className="list-disc list-inside space-y-2 marker:text-primary">
-                                    <li>The player to the dealer's left leads the first trick.</li>
-                                    <li>You must <strong>follow suit</strong> if you have a card of the leading suit.</li>
-                                    <li>If you don't have the suit, you can play a <strong>Trump</strong> to win, or discard any other card.</li>
-                                    <li>The highest card of the lead suit wins, unless a Trump is played. The highest Trump wins.</li>
+                                    {(t('howToPlayContent.playing.points', { returnObjects: true }) as string[]).map((point, i) => (
+                                        <li key={i}>{point}</li>
+                                    ))}
                                 </ul>
                             </section>
 
                             <section>
-                                <h3 className="text-lg font-bold text-white mb-2">Scoring</h3>
+                                <h3 className="text-lg font-bold text-white mb-2">{t('howToPlayContent.scoring.title')}</h3>
                                 <div className="bg-white/5 p-4 rounded-lg border border-white/10">
-                                    <p className="mb-2"><span className="text-green-400 font-bold">Correct Bet:</span> 10 points + (Bet × 1)</p>
-                                    <p><span className="text-red-400 font-bold">Incorrect Bet:</span> 0 points</p>
+                                    <p className="mb-2"><span className="text-green-400 font-bold">{t('howToPlayContent.scoring.correct')}</span></p>
+                                    <p className="mb-2"><span className="text-red-400 font-bold">{t('howToPlayContent.scoring.incorrect')}</span></p>
+                                    <p className="text-sm text-slate-400 italic">{t('howToPlayContent.scoring.examples')}</p>
                                 </div>
                             </section>
                         </div>
@@ -69,7 +79,7 @@ export default function HowToPlay({ isOpen, onClose }: HowToPlayProps) {
                                 onClick={onClose}
                                 className="px-8 py-2 bg-primary text-white font-bold rounded-full hover:bg-primary/90 transition-colors"
                             >
-                                Got it!
+                                {t('howToPlayContent.gotIt')}
                             </button>
                         </div>
                     </motion.div>

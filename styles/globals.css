@@ -13,9 +13,18 @@ body {
   color: var(--foreground);
   background: radial-gradient(circle at top left, #1e1b4b, #0f172a, #000000);
   background-attachment: fixed;
-  font-family: 'Inter', system-ui, sans-serif;
+  @apply font-sans;
   font-size: 16px;
   overflow-x: hidden;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  @apply font-heading;
 }
 
 @layer components {

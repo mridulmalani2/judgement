@@ -11,5 +11,38 @@
     "credits": {
         "developedBy": "Developed with love and Google AntiGravity by",
         "dedication": "For the grandparents back home, and jab unhe munnu ki yaad aati hain."
+    },
+    "howToPlayContent": {
+        "title": "How to Play Judgment",
+        "objective": {
+            "title": "Objective",
+            "text": "Judgment (also known as Kaach-Paani or Kachuful) is a trick-taking card game where strategy and prediction are key. The goal is not just to win tricks, but to win exactly the number of tricks you predicted (bid) at the start of each round."
+        },
+        "flow": {
+            "title": "Game Structure",
+            "points": [
+                "The game is played over multiple rounds. In the first round, each player receives a set number of cards (e.g., 7). In subsequent rounds, the number of cards decreases by one (7, 6, 5...) until it reaches 1, and then increases back up (1, 2, 3... 7).",
+                "In each round, a 'Trump' suit is determined in a fixed order: Spades ♠, Hearts ♥, Diamonds ♦, Clubs ♣. This repeats every 4 rounds.",
+                "After dealing, starting from the player left of the dealer, each player must bid (predict) the number of tricks they will win.",
+                "Constraint: The sum of all bids cannot equal the total number of cards in the round. This ensures at least one player will fail their judgment. The dealer (last to bid) must bid accordingly."
+            ]
+        },
+        "playing": {
+            "title": "Playing the Hand",
+            "points": [
+                "The player to the dealer's left leads the first trick by playing any card.",
+                "Other players must follow suit (play a card of the same suit) if they have one.",
+                "If a player does not have the lead suit, they can play a Trump card to win the trick, or discard any other card.",
+                "The trick is won by the highest Trump card played. If no Trump was played, the highest card of the lead suit wins.",
+                "The winner of the trick leads the next one."
+            ]
+        },
+        "scoring": {
+            "title": "Scoring System",
+            "correct": "Successful Judgment: If you win exactly the number of tricks you bid, you score: (Bid + 1) × 10 + Bid.",
+            "incorrect": "Failed Judgment: If you win more or fewer tricks than your bid, you score 0 points for that round.",
+            "examples": "Examples: Bid 0 & Win 0 = 10 pts. Bid 2 & Win 2 = 32 pts. Bid 3 & Win 2 = 0 pts."
+        },
+        "gotIt": "I'm Ready to Play!"
     }
 }
