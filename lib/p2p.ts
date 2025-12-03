@@ -30,14 +30,9 @@ export class P2PManager {
                 reject(new Error('P2P initialization timed out after 30 seconds. Please check your internet connection.'));
             }, 30000);
 
-            // Use alternative PeerJS servers with fallback
-            // Try multiple free PeerJS cloud instances
-            this.peer = new Peer({
+            // Use custom PeerJS server from env vars, or fallback to cloud
+            const peerConfig: any = {
                 debug: 2,
-                host: '0.peerjs.com',
-                port: 443,
-                path: '/',
-                secure: true,
                 config: {
                     iceServers: [
                         { urls: 'stun:stun.l.google.com:19302' },
@@ -45,7 +40,24 @@ export class P2PManager {
                         { urls: 'stun:stun.services.mozilla.com:3478' }
                     ]
                 }
-            });
+            };
+
+            // Use custom server if configured
+            if (process.env.NEXT_PUBLIC_PEER_HOST) {
+                console.log('🚀 Using custom PeerJS server:', process.env.NEXT_PUBLIC_PEER_HOST);
+                peerConfig.host = process.env.NEXT_PUBLIC_PEER_HOST;
+                peerConfig.port = parseInt(process.env.NEXT_PUBLIC_PEER_PORT || '443');
+                peerConfig.path = process.env.NEXT_PUBLIC_PEER_PATH || '/';
+                peerConfig.secure = true;
+            } else {
+                console.log('☁️ Using PeerJS cloud server (0.peerjs.com)');
+                peerConfig.host = '0.peerjs.com';
+                peerConfig.port = 443;
+                peerConfig.path = '/';
+                peerConfig.secure = true;
+            }
+
+            this.peer = new Peer(peerConfig);
 
             this.peer.on('open', async (id) => {
                 console.log('✅ Peer connected! My ID:', id);
