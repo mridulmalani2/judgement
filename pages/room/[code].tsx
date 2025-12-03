@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { v4 as uuidv4 } from 'uuid';
-import { io, Socket } from 'socket.io-client';
+import { P2PManager, P2PEvent } from '../../lib/p2p';
 import { GameState, Player, Card, GameAction, Suit, GameSettings } from '../../lib/types';
 import { createDeck, shuffleDeck, dealCards } from '../../lib/deck';
 import { getTrickWinner, isValidPlay, calculateScores, canBet, getAutoPlayCard } from '../../lib/gameEngine';
@@ -14,7 +14,7 @@ import Leaderboard from '../../components/Leaderboard';
 import DealerButton from '../../components/DealerButton';
 import GameHUD from '../../components/GameHUD';
 import HostSettings from '../../components/HostSettings';
-import { Copy, Share2, MessageCircle, Menu, Users, Crown, Settings as SettingsIcon, UserX, UserCheck } from 'lucide-react';
+import { Copy, Share2, MessageCircle, Menu, Users, Crown, Settings as SettingsIcon, UserX, UserCheck, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 
@@ -26,11 +26,17 @@ export default function Room() {
     const [myId, setMyId] = useState<string>('');
     const [myName, setMyName] = useState<string>('');
     const [gameState, setGameState] = useState<GameState | null>(null);
-    const [socket, setSocket] = useState<Socket | null>(null);
+    const [p2p, setP2P] = useState<P2PManager | null>(null);
     const [isHost, setIsHost] = useState(false);
-    const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
-    const [showMobileMenu, setShowMobileMenu] = useState(false);
+    const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
+    const [errorMessage, setErrorMessage] = useState<string>('');
     const [showSettings, setShowSettings] = useState(false);
+
+    // Refs for state access in callbacks
+    const gameStateRef = useRef<GameState | null>(null);
+    useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
+
+    const p2pRef = useRef<P2PManager | null>(null);
 
     // Initialize
     useEffect(() => {
@@ -51,59 +57,252 @@ export default function Room() {
         const isCreator = router.query.host === 'true';
         setIsHost(isCreator);
 
-        // Initialize Socket.io
-        const initSocket = async () => {
-            await fetch('/api/socket');
-            const newSocket = io({
-                path: '/api/socket',
+        // Cleanup previous instance
+        if (p2pRef.current) {
+            p2pRef.current.destroy();
+        }
+
+        const manager = new P2PManager(roomCode, isCreator, (event) => handleP2PEvent(event, isCreator, storedId, storedName));
+        p2pRef.current = manager;
+        setP2P(manager);
+
+        manager.init()
+            .then(() => {
+                setConnectionStatus('connected');
+                if (isCreator) {
+                    initializeGame(storedId, storedName);
+                }
+            })
+            .catch((err) => {
+                console.error("P2P Init Error:", err);
+                setConnectionStatus('error');
+                setErrorMessage(err.message);
             });
 
-            newSocket.on('connect', () => {
-                console.log('Connected to server');
-                setConnectionStatus('connected');
-                newSocket.emit('join_room', {
-                    roomId: roomCode,
-                    player: {
-                        id: storedId,
-                        name: storedName,
-                        seatIndex: -1, // Server assigns
-                        isHost: isCreator,
+        return () => {
+            manager.destroy();
+        };
+    }, [roomCode, router.query.host]);
+
+    const handleP2PEvent = (event: P2PEvent, amHost: boolean, myId: string, myName: string) => {
+        switch (event.type) {
+            case 'CONNECT':
+                if (amHost) {
+                    // Send current state to new peer
+                    if (gameStateRef.current) {
+                        p2pRef.current?.sendTo(event.peerId, { type: 'STATE_UPDATE', state: gameStateRef.current });
+                    }
+                } else {
+                    // I connected to host, send JOIN
+                    p2pRef.current?.send({
+                        type: 'ACTION',
+                        action: {
+                            type: 'JOIN',
+                            playerId: myId,
+                            payload: { name: myName }
+                        }
+                    });
+                }
+                break;
+            case 'DATA':
+                const payload = event.data;
+                if (payload.type === 'STATE_UPDATE') {
+                    setGameState(payload.state);
+                } else if (payload.type === 'ACTION' && amHost) {
+                    processAction(payload.action);
+                }
+                break;
+            case 'DISCONNECT':
+                // Handle disconnect
+                break;
+            case 'ERROR':
+                setErrorMessage(event.error);
+                setConnectionStatus('error');
+                break;
+        }
+    };
+
+    const initializeGame = (hostId: string, hostName: string) => {
+        const newPlayer: Player = {
+            id: hostId,
+            name: hostName,
+            seatIndex: 0,
+            isHost: true,
+            connected: true,
+            isAway: false,
+            currentBet: null,
+            tricksWon: 0,
+            totalPoints: 0,
+            hand: []
+        };
+        const newState: GameState = {
+            roomCode: roomCode as string,
+            players: [newPlayer],
+            roundIndex: 0,
+            cardsPerPlayer: 0,
+            trump: 'spades',
+            dealerSeatIndex: 0,
+            currentLeaderSeatIndex: 0,
+            currentTrick: [],
+            phase: 'lobby',
+            deckSeed: uuidv4(),
+            scoresHistory: [],
+            settings: {
+                discardStrategy: 'random',
+                autoPlayEnabled: true,
+                allowSpectators: true
+            }
+        };
+        setGameState(newState);
+    };
+
+    const sendAction = (action: GameAction) => {
+        if (isHost) {
+            processAction(action);
+        } else {
+            p2pRef.current?.send({ type: 'ACTION', action });
+        }
+    };
+
+    // --- Game Logic (Host Only) ---
+
+    const startRound = (state: GameState) => {
+        const numPlayers = state.players.length;
+        const maxCards = Math.min(Math.floor(52 / numPlayers), 13);
+        state.cardsPerPlayer = maxCards - state.roundIndex;
+
+        if (state.cardsPerPlayer <= 0) {
+            state.phase = 'finished';
+            return;
+        }
+
+        const { hands } = dealCards(numPlayers, {
+            seed: state.deckSeed + state.roundIndex,
+            discardStrategy: state.settings.discardStrategy,
+            cardsPerPlayer: state.cardsPerPlayer
+        });
+
+        state.players.forEach((p, i) => {
+            p.hand = hands[i];
+            p.currentBet = null;
+            p.tricksWon = 0;
+        });
+
+        state.trump = ['spades', 'hearts', 'diamonds', 'clubs'][state.roundIndex % 4] as Suit;
+        state.dealerSeatIndex = state.roundIndex % numPlayers;
+        state.currentLeaderSeatIndex = (state.dealerSeatIndex + 1) % numPlayers;
+        state.phase = 'betting';
+        state.currentTrick = [];
+    };
+
+    const processAction = (action: GameAction) => {
+        const currentState = gameStateRef.current;
+        if (!currentState) return;
+
+        let newState: GameState = JSON.parse(JSON.stringify(currentState));
+
+        switch (action.type) {
+            case 'JOIN':
+                const joinAction = action as any;
+                if (newState.players.some((p: Player) => p.id === joinAction.playerId)) {
+                    const p = newState.players.find((p: Player) => p.id === joinAction.playerId);
+                    if (p) p.connected = true;
+                } else {
+                    const newPlayer: Player = {
+                        id: joinAction.playerId,
+                        name: joinAction.payload.name,
+                        seatIndex: newState.players.length,
+                        isHost: false,
                         connected: true,
                         isAway: false,
                         currentBet: null,
                         tricksWon: 0,
                         totalPoints: 0,
                         hand: []
+                    };
+                    newState.players.push(newPlayer);
+                }
+                break;
+
+            case 'START_GAME':
+                if (newState.phase !== 'lobby' && newState.phase !== 'finished') return;
+                newState.roundIndex = 0;
+                newState.scoresHistory = [];
+                newState.players.forEach((p: Player) => { p.totalPoints = 0; p.tricksWon = 0; p.currentBet = null; });
+                startRound(newState);
+                break;
+
+            case 'BET':
+                const playerIndex = newState.players.findIndex(p => p.id === action.playerId);
+                if (playerIndex === -1) return;
+
+                if (!canBet(action.bet, newState.players.map(p => p.currentBet || 0).slice(0, playerIndex), newState.players.length, newState.cardsPerPlayer)) {
+                    return;
+                }
+
+                newState.players[playerIndex].currentBet = action.bet;
+                newState.currentLeaderSeatIndex = (newState.currentLeaderSeatIndex + 1) % newState.players.length;
+
+                if (newState.players.every(p => p.currentBet !== null)) {
+                    newState.phase = 'playing';
+                    newState.currentLeaderSeatIndex = (newState.dealerSeatIndex + 1) % newState.players.length;
+                }
+                break;
+
+            case 'PLAY_CARD':
+                const pIndex = newState.players.findIndex(p => p.id === action.playerId);
+                if (pIndex === -1) return;
+
+                const player = newState.players[pIndex];
+                const card = action.card;
+
+                if (!isValidPlay(card, player.hand, newState.currentTrick, newState.trump)) {
+                    return;
+                }
+
+                player.hand = player.hand.filter(c => !(c.suit === card.suit && c.rank === card.rank));
+                newState.currentTrick.push({ seatIndex: pIndex, card: card });
+                newState.currentLeaderSeatIndex = (newState.currentLeaderSeatIndex + 1) % newState.players.length;
+
+                if (newState.currentTrick.length === newState.players.length) {
+                    const winnerSeatIndex = getTrickWinner(newState.currentTrick, newState.trump);
+                    newState.players[winnerSeatIndex].tricksWon = (newState.players[winnerSeatIndex].tricksWon || 0) + 1;
+                    newState.currentTrick = [];
+                    newState.currentLeaderSeatIndex = winnerSeatIndex;
+
+                    if (newState.players[0].hand.length === 0) {
+                        const roundScores = calculateScores(newState.players);
+                        newState.players.forEach(p => {
+                            p.totalPoints = (p.totalPoints || 0) + (roundScores[p.id] || 0);
+                        });
+                        newState.roundIndex++;
+                        startRound(newState);
                     }
-                });
-            });
+                }
+                break;
 
-            newSocket.on('disconnect', () => {
-                console.log('Disconnected from server');
-                setConnectionStatus('disconnected');
-            });
+            case 'UPDATE_SETTINGS':
+                const updateSettingsAction = action as { type: 'UPDATE_SETTINGS', settings: Partial<GameSettings> };
+                newState.settings = { ...newState.settings, ...updateSettingsAction.settings };
+                break;
 
-            newSocket.on('state_update', (state: GameState) => {
-                setGameState(state);
-            });
+            case 'TOGGLE_AWAY':
+                const awayPlayer = newState.players.find((p: Player) => p.id === action.playerId);
+                if (awayPlayer) awayPlayer.isAway = !awayPlayer.isAway;
+                break;
 
-            newSocket.on('error', (msg: string) => {
-                console.error('Socket error:', msg);
-                alert(msg);
-            });
+            case 'RENAME_PLAYER':
+                const renamePlayer = newState.players.find((p: Player) => p.id === action.playerId);
+                if (renamePlayer) renamePlayer.name = action.newName;
+                break;
 
-            setSocket(newSocket);
-        };
+            case 'END_GAME':
+                newState.phase = 'finished';
+                break;
+        }
 
-        initSocket();
-
-        return () => {
-            socket?.disconnect();
-        };
-    }, [roomCode, router.query.host]);
-
-    const sendAction = (action: GameAction) => {
-        socket?.emit('game_action', { roomId: roomCode, action });
+        setGameState(newState);
+        p2pRef.current?.send({ type: 'STATE_UPDATE', state: newState });
     };
 
     // Autoplay Effect (Host Only)
@@ -115,7 +314,6 @@ export default function Room() {
 
         const timer = setTimeout(() => {
             if (gameState.phase === 'betting') {
-                // Auto Bet
                 let bet = 0;
                 const currentBets = gameState.players
                     .filter(p => p.currentBet !== null)
@@ -124,29 +322,45 @@ export default function Room() {
                 if (!canBet(bet, currentBets, gameState.players.length, gameState.cardsPerPlayer)) {
                     bet = 1;
                 }
-                sendAction({ type: 'BET', playerId: currentPlayer.id, bet });
+                processAction({ type: 'BET', playerId: currentPlayer.id, bet });
             } else if (gameState.phase === 'playing') {
-                // Auto Play Card
                 try {
                     const card = getAutoPlayCard(currentPlayer.hand, gameState.currentTrick, gameState.trump);
-                    sendAction({ type: 'PLAY_CARD', playerId: currentPlayer.id, card });
+                    processAction({ type: 'PLAY_CARD', playerId: currentPlayer.id, card });
                 } catch (e) {
                     console.error("Autoplay error", e);
                 }
             }
-        }, 2000); // 2 second delay for realism
+        }, 2000);
 
         return () => clearTimeout(timer);
     }, [gameState, isHost]);
 
 
     // UI Rendering
+    if (connectionStatus === 'error') return (
+        <div className="min-h-screen flex items-center justify-center text-white bg-gradient-to-br from-slate-900 to-black p-4">
+            <div className="text-center max-w-md">
+                <div className="text-red-500 text-5xl mb-4">⚠️</div>
+                <h2 className="text-2xl font-bold mb-2">Connection Error</h2>
+                <p className="text-slate-400 mb-6">{errorMessage}</p>
+                <button
+                    onClick={() => window.location.reload()}
+                    className="px-6 py-3 bg-white/10 hover:bg-white/20 rounded-full font-bold transition-colors flex items-center gap-2 mx-auto"
+                >
+                    <RefreshCw className="w-5 h-5" /> Try Again
+                </button>
+            </div>
+        </div>
+    );
+
     if (!gameState) return (
         <div className="min-h-screen flex items-center justify-center text-white bg-gradient-to-br from-slate-900 to-black">
             <div className="text-center">
                 <div className="animate-spin w-12 h-12 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
                 <h2 className="text-xl font-bold">Connecting to Room...</h2>
                 <p className="text-slate-400 mt-2">Code: {roomCode}</p>
+                {connectionStatus === 'connecting' && <p className="text-xs text-slate-500 mt-4">Establishing P2P connection...</p>}
             </div>
         </div>
     );
@@ -205,7 +419,6 @@ export default function Room() {
                     <button
                         onClick={() => {
                             navigator.clipboard.writeText(window.location.href);
-                            // Toast?
                         }}
                         className="p-2 hover:bg-white/10 rounded-full transition-colors"
                         title="Copy Link"
