@@ -223,6 +223,15 @@ export default function Room() {
             }
         };
         setGameState(newState);
+
+        if (usePollingRef.current) {
+            // Save initial state to server in polling mode
+            fetch(`/api/rooms/${roomCode}/sync`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newState)
+            });
+        }
     };
 
     const sendAction = async (action: GameAction) => {
