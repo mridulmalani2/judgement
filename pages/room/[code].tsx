@@ -1,3 +1,4 @@
+// Last updated: 2025-12-05
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
