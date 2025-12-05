@@ -127,6 +127,10 @@ export default function Room() {
                     const state = await res.json();
                     setGameState(state);
                     setConnectionStatus('connected');
+                } else if (res.status === 404 && !isCreator) {
+                    // Room doesn't exist yet - non-host should see an error
+                    setConnectionStatus('error');
+                    setErrorMessage('Room not found. Please check the room code or wait for the host to create it.');
                 }
 
                 // If host, process pending actions
