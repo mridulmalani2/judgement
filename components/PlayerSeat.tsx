@@ -58,6 +58,13 @@ export default function PlayerSeat({ player, isDealer, isCurrentTurn, isMe, posi
                 )}
             </div>
 
+            {player.currentBet !== null && (
+                <div className="absolute -top-6 -right-8 bg-white text-black font-bold text-lg px-3 py-1 rounded-xl shadow-xl z-20 animate-bounce-in border-2 border-yellow-400 flex flex-col items-center leading-none">
+                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Bet</span>
+                    {player.currentBet}
+                </div>
+            )}
+
             <div className="mt-2 text-center w-full">
                 <div className="font-bold text-white text-sm md:text-base truncate max-w-[100px] md:max-w-[120px]">
                     {player.name} {isMe && "(You)"}
@@ -68,6 +75,7 @@ export default function PlayerSeat({ player, isDealer, isCurrentTurn, isMe, posi
                         {player.totalPoints} pts
                     </div>
 
+                    {/* Tricks won tracking separately */}
                     {player.currentBet !== null && (
                         <div className={clsx(
                             "text-xs font-bold px-2 py-0.5 rounded-full border",
@@ -75,7 +83,7 @@ export default function PlayerSeat({ player, isDealer, isCurrentTurn, isMe, posi
                                 player.tricksWon > player.currentBet ? "bg-red-500/20 border-red-500 text-red-300" :
                                     "bg-yellow-500/20 border-yellow-500 text-yellow-300"
                         )}>
-                            {player.tricksWon} / {player.currentBet}
+                            Won: {player.tricksWon}
                         </div>
                     )}
                 </div>
