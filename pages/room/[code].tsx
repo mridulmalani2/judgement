@@ -139,21 +139,24 @@ export default function Room() {
     };
 
     const startPolling = (isCreator: boolean, playerId: string, playerName: string, stateExists: boolean = false) => {
-        console.log('🔄 Starting polling mode...');
+        // If I am the Creator, I don't need to "poll" for state, I AM the state. 
+        // My 'Host Bridge' effect handles action fetching.
+        if (isCreator) {
+            if (!stateExists) initializeGame(playerId, playerName);
+            return;
+        }
+
+        console.log('🔄 Client: Starting polling mode...');
         setConnectionStatus('connecting');
 
-        if (isCreator && !stateExists) {
-            initializeGame(playerId, playerName);
-        } else {
-            // Join the room
-            setTimeout(() => {
-                sendAction({
-                    type: 'JOIN',
-                    playerId: playerId,
-                    payload: { name: playerName }
-                } as any);
-            }, 1000);
-        }
+        // Join if needed
+        setTimeout(() => {
+            sendAction({
+                type: 'JOIN',
+                playerId: playerId,
+                payload: { name: playerName }
+            } as any);
+        }, 1000);
 
         // Poll for state updates
         const poll = async () => {
@@ -163,19 +166,9 @@ export default function Room() {
                     const state = await res.json();
                     setGameState(state);
                     setConnectionStatus('connected');
-                } else if (res.status === 404 && !isHost) { // isCreator check from ref is tricky, use state
-                    // Room doesn't exist yet - non-host should see an error
+                } else if (res.status === 404) {
                     setConnectionStatus('error');
-                    setErrorMessage('Room not found. Please check the room code or wait for the host to create it.');
-                }
-
-                // If host, process pending actions
-                if (isCreator) {
-                    const actionsRes = await fetch(`/api/rooms/${roomCode}/sync`, { method: 'DELETE' });
-                    if (actionsRes.ok) {
-                        const { actions } = await actionsRes.json();
-                        actions.forEach((item: any) => processAction(item.action));
-                    }
+                    setErrorMessage('Room not found. Host may have disconnected or is setting up.');
                 }
             } catch (error) {
                 console.error('Polling error:', error);
@@ -183,7 +176,7 @@ export default function Room() {
         };
 
         poll();
-        pollingRef.current = setInterval(poll, 500);
+        pollingRef.current = setInterval(poll, 1000); // 1s interval for clients
     };
 
     const stopPolling = () => {
@@ -203,14 +196,17 @@ export default function Room() {
                     }
                 } else {
                     // I connected to host, send JOIN
-                    p2pRef.current?.send({
-                        type: 'ACTION',
-                        action: {
-                            type: 'JOIN',
-                            playerId: myId,
-                            payload: { name: myName }
-                        }
-                    });
+                    // Wait a brief moment to ensure connection stable?
+                    setTimeout(() => {
+                        p2pRef.current?.send({
+                            type: 'ACTION',
+                            action: {
+                                type: 'JOIN',
+                                playerId: myId,
+                                payload: { name: myName }
+                            }
+                        });
+                    }, 500);
                 }
                 break;
             case 'DATA':
@@ -266,14 +262,12 @@ export default function Room() {
         };
         setGameState(newState);
 
-        if (usePollingRef.current) {
-            // Save initial state to server in polling mode
-            fetch(`/api/rooms/${roomCode}/sync`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(newState)
-            });
-        }
+        // Always save initial state to server
+        fetch(`/api/rooms/${roomCode}/sync`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newState)
+        }).catch(e => console.error("Init save error", e));
     };
 
     const sendAction = async (action: GameAction) => {
@@ -494,18 +488,53 @@ export default function Room() {
 
         setGameState(newState);
 
-        if (usePollingRef.current) {
-            // Save to server in polling mode
+        // --- SYNCHRONIZATION ---
+
+        // 1. P2P Broadcast (Always try)
+        if (p2pRef.current) {
+            p2pRef.current.send({ type: 'STATE_UPDATE', state: newState });
+        }
+
+        // 2. Server Persistence (Host Only)
+        // Always save state to server to support polling clients and recovery
+        if (isHost) {
             fetch(`/api/rooms/${roomCode}/sync`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(newState)
-            });
-        } else {
-            // Broadcast via P2P
-            p2pRef.current?.send({ type: 'STATE_UPDATE', state: newState });
+            }).catch(e => console.error("State sync error:", e));
         }
     };
+
+    // --- Host Bridge: Poll for actions from non-P2P clients ---
+    useEffect(() => {
+        if (!isHost || !roomCode) return;
+
+        const bridgeInterval = setInterval(async () => {
+            try {
+                // Check for pending actions from polling clients
+                const res = await fetch(`/api/rooms/${roomCode}/sync`, { method: 'DELETE' });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.actions && Array.isArray(data.actions) && data.actions.length > 0) {
+                        console.log(`🌉 Bridge: Processing ${data.actions.length} actions from pollers`);
+                        // Process actions sequentially
+                        data.actions.forEach((item: any) => {
+                            // Wrap in ensure-action sort of logic if needed, 
+                            // but processAction handles it directly.
+                            // We must be careful not to infinite loop if processAction triggers updates.
+                            // processAction updates state ref and pushes new state. Correct.
+                            processAction(item.action);
+                        });
+                    }
+                }
+            } catch (e) {
+                console.error("Bridge poll error:", e);
+            }
+        }, 1000); // Check every second
+
+        return () => clearInterval(bridgeInterval);
+    }, [isHost, roomCode]);
 
     // Autoplay Effect (Host Only)
     useEffect(() => {
