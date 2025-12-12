@@ -59,6 +59,7 @@ export function prepareRoundDeck(
             // Priority: Rank (primary), Suit (secondary)
             deck.sort((a, b) => {
                 if (a.rank !== b.rank) return a.rank - b.rank;
+                // SUITS order: ['clubs', 'diamonds', 'hearts', 'spades'] (0=lowest, 3=highest)
                 return SUITS.indexOf(a.suit) - SUITS.indexOf(b.suit);
             });
             discarded = deck.slice(0, cardsToDiscard);
