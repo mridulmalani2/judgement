@@ -21,11 +21,19 @@ export default function Home() {
     if (storedName) setName(storedName);
   }, []);
 
-  const createRoom = () => {
+  const createRoom = async () => {
     if (!name) return alert(t('enterName'));
     localStorage.setItem('judgment_name', name);
-    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-    router.push(`/room/${code}?host=true`);
+
+    try {
+      const res = await fetch('/api/rooms', { method: 'POST' });
+      if (!res.ok) throw new Error('Failed to create room');
+      const data = await res.json();
+      router.push(`/room/${data.roomCode}?host=true`);
+    } catch (e) {
+      console.error(e);
+      alert('Error creating room. Please try again.');
+    }
   };
 
   const joinRoom = () => {

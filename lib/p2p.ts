@@ -89,6 +89,8 @@ export class P2PManager {
                         resolve(id);
                     } catch (e) {
                         console.error('❌ Failed to register host:', e);
+                        // Emit error to handler as well
+                        this.handler({ type: 'ERROR', error: 'Failed to register as host: ' + e });
                         reject(e);
                     }
                 } else {
@@ -149,8 +151,9 @@ export class P2PManager {
 
             const data = await res.json();
             console.log('Host registered successfully:', data);
-        } catch (error) {
+        } catch (error: any) {
             console.error('Register host error:', error);
+            // This error will be suppressed by the caller retrying, or bubbled up
             throw error;
         }
     }
@@ -173,11 +176,33 @@ export class P2PManager {
                 reliable: true
             });
 
-            this.handleConnection(conn);
+            if (!conn) {
+                throw new Error("Could not create connection");
+            }
 
-            // Wait a bit to ensure connection opens, otherwise throw? 
-            // PeerJS doesn't await .connect(), so we rely on 'open' event.
-            // But if it fails, we get 'error' on the peer.
+            // We must wait for 'open' or 'error'
+            await new Promise<void>((resolve, reject) => {
+                const timeout = setTimeout(() => reject(new Error("Connection timeout")), 10000);
+
+                conn.on('open', () => {
+                    clearTimeout(timeout);
+                    this.handleConnection(conn);
+                    resolve();
+                });
+
+                conn.on('error', (err) => {
+                    clearTimeout(timeout);
+                    reject(err);
+                });
+
+                // Also handle peer errors during connection attempt
+                this.peer?.once('error', (err) => {
+                    if (err.type === 'peer-unavailable') {
+                        clearTimeout(timeout);
+                        reject(new Error("Peer unavailable"));
+                    }
+                });
+            });
 
         } catch (e) {
             console.error("Failed to connect to host:", e);
@@ -186,12 +211,16 @@ export class P2PManager {
                 await new Promise(r => setTimeout(r, 2000));
                 return this.connectToHost(retries - 1);
             } else {
-                throw new Error("Could not connect to host. Make sure the host is online.");
+                this.handler({ type: 'ERROR', error: "Could not connect to host after multiple attempts. The host may be offline." });
+                throw new Error("Could not connect to host.");
             }
         }
     }
 
     private handleConnection(conn: DataConnection) {
+        // Prevent duplicate listeners
+        conn.removeAllListeners();
+
         conn.on('open', () => {
             console.log('Connection opened:', conn.peer);
             this.connections.set(conn.peer, conn);
@@ -211,6 +240,7 @@ export class P2PManager {
         conn.on('error', (err) => {
             console.error('Connection error:', err);
             this.connections.delete(conn.peer);
+            this.handler({ type: 'ERROR', error: `Connection lost with ${conn.peer}: ${err}` });
             this.handler({ type: 'DISCONNECT', peerId: conn.peer });
         });
     }
@@ -226,12 +256,17 @@ export class P2PManager {
         const conn = this.connections.get(peerId);
         if (conn && conn.open) {
             conn.send(data);
+        } else {
+            console.warn(`Cannot send to ${peerId}: Connection not open`);
         }
     }
 
     public destroy() {
         this.destroyed = true;
-        this.connections.forEach(conn => conn.close());
+        this.connections.forEach(conn => {
+            conn.close();
+            // We should ideally trigger disconnect events here too if the app relies on them
+        });
         this.connections.clear();
         this.peer?.destroy();
         this.peer = null;

@@ -1,6 +1,6 @@
 import { Player } from '../lib/types';
 import clsx from 'clsx';
-import { User, Crown, Gavel, UserX } from 'lucide-react';
+import { User, Crown, UserX } from 'lucide-react';
 import { motion } from 'framer-motion';
 import DealerButton from './DealerButton';
 
@@ -9,10 +9,16 @@ interface PlayerSeatProps {
     isDealer: boolean;
     isCurrentTurn: boolean;
     isMe: boolean;
-    position: 'bottom' | 'left' | 'top' | 'right' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+    position?: 'top' | 'bottom' | 'left' | 'right' | string;
+    className?: string; // Add className optional prop
 }
 
-export default function PlayerSeat({ player, isDealer, isCurrentTurn, isMe, position }: PlayerSeatProps) {
+export default function PlayerSeat({ player, isDealer, isCurrentTurn, isMe, position, className }: PlayerSeatProps) {
+    // If position is explicitly top/bottom, we might want to adjust styling slightly
+    // but the main positioning is handled by the parent.
+    // However, to satisfy usage:
+    const positionClass = position === 'bottom' ? 'scale-110' : 'scale-100';
+
     return (
         <motion.div
             initial={{ opacity: 0, scale: 0.8 }}
@@ -20,7 +26,9 @@ export default function PlayerSeat({ player, isDealer, isCurrentTurn, isMe, posi
             className={clsx(
                 "flex flex-col items-center p-3 rounded-2xl transition-all duration-300 relative glass-panel",
                 isCurrentTurn ? "ring-2 ring-yellow-400 bg-white/10 shadow-[0_0_20px_rgba(250,204,21,0.3)]" : "bg-black/20",
-                !player.connected && "grayscale"
+                !player.connected && "grayscale",
+                positionClass, // Apply the position-based class here
+                className
             )}
         >
             <div className="relative">

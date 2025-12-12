@@ -53,7 +53,7 @@ export class PeerManager {
 
             this.peer.on('error', (err) => {
                 console.error('Peer error:', err);
-                // reject(err); // Only reject if starting
+                reject(err);
             });
 
             this.peer.on('disconnected', () => {

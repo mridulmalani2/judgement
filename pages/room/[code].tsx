@@ -62,12 +62,50 @@ export default function Room() {
         const isCreator = router.query.host === 'true';
         setIsHost(isCreator);
 
+        // Try to fetch existing state first (to handle refreshes)
+        fetch(`/api/rooms/${roomCode}/sync`)
+            .then(async (res) => {
+                if (res.ok) {
+                    const existingState = await res.json();
+                    console.log("Found existing state, restoring...");
+                    setGameState(existingState);
+                    setConnectionStatus('connected');
+
+                    // If we found state, we skip P2P init *as a creator* who makes a new game,
+                    // but we still need to set up P2P to listen or host.
+                    setupP2P(roomCode, isCreator, storedId, storedName, true); // true = already initialized
+                } else {
+                    // No state found.
+                    if (isCreator) {
+                        // Create new game
+                        setupP2P(roomCode, isCreator, storedId, storedName, false);
+                    } else {
+                        // Joiner - wait for host
+                        setupP2P(roomCode, isCreator, storedId, storedName, false);
+                    }
+                }
+            })
+            .catch(e => {
+                console.error("Error checking state:", e);
+                // Fallback to regular init flow
+                setupP2P(roomCode, isCreator, storedId, storedName, false);
+            });
+
+        return () => {
+            // Cleanup handled in setupP2P return or separate effect? 
+            // Ideally we should extract cleanup. For now, rely on ref modification or simple unmount.
+            if (p2pRef.current) p2pRef.current.destroy();
+            stopPolling();
+        };
+    }, [roomCode, router.query.host]);
+
+    const setupP2P = (code: string, amHost: boolean, myId: string, myName: string, stateExists: boolean) => {
         // Try P2P first
         if (p2pRef.current) {
             p2pRef.current.destroy();
         }
 
-        const manager = new P2PManager(roomCode, isCreator, (event) => handleP2PEvent(event, isCreator, storedId, storedName));
+        const manager = new P2PManager(code, amHost, (event) => handleP2PEvent(event, amHost, myId, myName));
         p2pRef.current = manager;
         setP2P(manager);
 
@@ -77,7 +115,7 @@ export default function Room() {
                 console.warn("⚠️ P2P initialization took too long, forcing polling mode...");
                 manager.destroy();
                 usePollingRef.current = true;
-                startPolling(isCreator, storedId, storedName);
+                startPolling(amHost, myId, myName, stateExists);
             }
         }, 8000); // 8 seconds max wait
 
@@ -86,29 +124,25 @@ export default function Room() {
                 clearTimeout(globalTimeout);
                 console.log('✅ P2P connected successfully!');
                 setConnectionStatus('connected');
-                if (isCreator) {
-                    initializeGame(storedId, storedName);
+                if (amHost && !stateExists) {
+                    initializeGame(myId, myName);
+                } else if (!amHost) {
+                    // Join logic is handled in "CONNECT" event 
                 }
             })
             .catch((err) => {
                 clearTimeout(globalTimeout);
                 console.error("❌ P2P failed, switching to polling mode:", err);
-                // P2P failed, use polling instead
                 usePollingRef.current = true;
-                startPolling(isCreator, storedId, storedName);
+                startPolling(amHost, myId, myName, stateExists);
             });
+    };
 
-        return () => {
-            manager.destroy();
-            stopPolling();
-        };
-    }, [roomCode, router.query.host]);
-
-    const startPolling = (isCreator: boolean, playerId: string, playerName: string) => {
+    const startPolling = (isCreator: boolean, playerId: string, playerName: string, stateExists: boolean = false) => {
         console.log('🔄 Starting polling mode...');
         setConnectionStatus('connecting');
 
-        if (isCreator) {
+        if (isCreator && !stateExists) {
             initializeGame(playerId, playerName);
         } else {
             // Join the room
@@ -552,6 +586,16 @@ export default function Room() {
     return (
         <div className="min-h-screen text-foreground overflow-hidden flex flex-col bg-[url('/bg-texture.png')] bg-cover">
             <Head><title>Room {roomCode}</title></Head>
+
+            {/* HUD */}
+            {gameState && gameState.phase !== 'lobby' && gameState.phase !== 'finished' && (
+                <GameHUD
+                    players={gameState.players}
+                    currentRound={gameState.roundIndex + 1}
+                    trump={gameState.trump}
+                    dealerName={gameState.players[gameState.dealerSeatIndex]?.name}
+                />
+            )}
 
             {/* Top Bar */}
             <header className="p-4 flex justify-between items-center bg-black/20 backdrop-blur-sm z-20">

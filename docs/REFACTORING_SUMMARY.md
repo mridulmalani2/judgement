@@ -146,46 +146,44 @@ LRANGE room:123:actions 0 -1
 # Should show pending actions
 ```
 
-### Check Logs (Vercel)
-```
-✅ Good signs:
-- "✅ P2P connected successfully!" OR "🔄 Starting polling mode..."
-- No "Room not found" for hosts
-- State syncing between players
+### 1. Status
 
-❌ Bad signs:
-- "Failed to register host" repeatedly
-- "Room not found" for host
-- Actions not being processed
-```
+**Current State:** ✅ Production-Ready with Robust Fallbacks
 
-## Rollback Plan
+The app is now fully configured for stable multiplayer reliability in both commercial/hosted contexts and simple "family mode" (no-setup) contexts.
 
-If something goes wrong:
+-   **Primary Persistence:** Upstash Redis (if configured).
+-   **Fallback Persistence:** Robust In-Memory (auto-activates if Redis fails or is missing).
+-   **Multiplayer:** Hybrid P2P + Polling.
+    -   Host creation is persisted via the API (Redis/Memory).
+    -   Clients connect via P2P (PeerJS) for real-time speed.
+    -   **Reliability:** Clients automatically fall back to Polling (via Next.js API) if P2P connections fail or timeout.
 
-1. **Revert the refactor:**
-   ```bash
-   git revert <commit-hash>
-   ```
+## 2. Architecture
 
-2. **Or restore specific files from git history:**
-   ```bash
-   git checkout <previous-commit> -- pages/api/rooms
-   ```
+### Backend & Storage
+-   **Database (Optional but Recommended):** Upstash Redis (REST API).
+-   **API Routes:**
+    -   `POST /api/rooms`: Generates unique room ID (checked against DB).
+    -   `GET /api/rooms/[code]/sync`: Fetches game state (polling mode).
+    -   `POST /api/signaling/[code]`: Handles WebRTC signaling (SDP/ICE) without a custom socket server.
+    -   **Validation:** All API routes now handle database unavailability gracefully.
 
-## Future Improvements
+### Frontend
+-   **Framework:** Next.js 16 (React 19).
+-   **State:** Local React State + Unified `GameState` object synced from Host.
+-   **PeerJS:** Used for direct host-client communication (low latency).
+-   **Auto-Recovery:** If PeerJS errors (firewall/network), the app seamlessly switches to HTTP Polling (1s interval).
 
-### Recommended Next Steps
-1. **Add Authentication:** Verify host identity for POST/DELETE on sync endpoint
-2. **Rate Limiting:** Prevent action spam from malicious clients
-3. **Better State Validation:** Add schema validation on GameState
-4. **Monitoring:** Add logging/metrics for room creation, join, sync
-5. **WebSocket Support:** Upgrade from polling to WebSocket for even lower latency
-
-### Optional Enhancements
-- Add room expiry notifications
-- Implement reconnection logic for disconnected players
-- Add spectator mode (settings.allowSpectators is defined but not fully implemented)
+## 3. Improvements Implemented
+-   **Hybrid Storage:** `lib/roomStore.ts` now tries Redis first, catches errors, and falls back to global memory.
+-   **Connection Safety:** `P2PManager` now properly handles disconnections, timeouts, and registration failures.
+-   **Lobby Stability:** Room creation ensures uniqueness. Signaling API is robust against timeouts.
+-   **UI/UX:**
+    -   Fixed `pointer-events` issues on desktop.
+    -   Added "Away" status handling.
+    -   Fixed dealing logic (infinite loops prevented).
+    -   Ensured playable cards are filtered visually.
 - Add replay/game history features
 
 ## Questions?

@@ -1,15 +1,39 @@
 import React from 'react';
-import { Player } from '../lib/types';
-import { Trophy, Target, Hand } from 'lucide-react';
+import { Player, Suit } from '../lib/types';
+import { Trophy, Target, Hand, Crown } from 'lucide-react';
 
 interface GameHUDProps {
     players: Player[];
     currentRound: number;
+    trump: Suit;
+    dealerName?: string;
 }
 
-export default function GameHUD({ players, currentRound }: GameHUDProps) {
+const suitIcons: Record<Suit, string> = {
+    spades: '♠️',
+    hearts: '♥️',
+    diamonds: '♦️',
+    clubs: '♣️'
+};
+
+export default function GameHUD({ players, currentRound, trump, dealerName }: GameHUDProps) {
     return (
-        <div className="fixed top-20 left-0 right-0 flex justify-center pointer-events-none z-10">
+        <div className="fixed top-20 left-0 right-0 flex flex-col items-center pointer-events-none z-10 space-y-2">
+
+            {/* Round Info */}
+            <div className="bg-black/60 backdrop-blur-md rounded-full px-6 py-1 text-white text-sm font-bold border border-white/10 shadow-lg flex items-center gap-4">
+                <span>Round {currentRound}</span>
+                <span className="w-px h-4 bg-white/20"></span>
+                <span className="flex items-center gap-1">Trump: <span className="text-xl leading-none">{suitIcons[trump]}</span></span>
+                {dealerName && (
+                    <>
+                        <span className="w-px h-4 bg-white/20"></span>
+                        <span className="flex items-center gap-1 text-yellow-400"><Crown className="w-3 h-3" /> {dealerName}</span>
+                    </>
+                )}
+            </div>
+
+            {/* Players Stats */}
             <div className="bg-black/40 backdrop-blur-md rounded-full px-6 py-2 border border-white/10 flex space-x-6 pointer-events-auto overflow-x-auto max-w-[90vw] no-scrollbar">
                 {players.map(p => (
                     <div key={p.id} className="flex flex-col items-center min-w-[80px]">
