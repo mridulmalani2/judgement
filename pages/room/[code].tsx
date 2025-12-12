@@ -334,6 +334,7 @@ export default function Room() {
             state.currentDeck = remainingDeck;
 
             // Trump rotation: Spades -> Hearts -> Diamonds -> Clubs
+            // Cycle repeats every 4 rounds.
             const trumpOrder: Suit[] = ['spades', 'hearts', 'diamonds', 'clubs'];
             state.trump = trumpOrder[state.roundIndex % 4];
 

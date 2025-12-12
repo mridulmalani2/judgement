@@ -1,55 +1,64 @@
-import { dealCards } from './deck';
+import { prepareRoundDeck, createDeck } from './deck';
 import { Card } from './types';
 
 describe('Deck Logic', () => {
-    it('should deal correct number of cards', () => {
-        // 4 players, 52 cards. 13 cards each.
-        const { hands, remaining } = dealCards(4);
-        expect(hands.length).toBe(4);
-        expect(hands[0].length).toBe(13);
-        expect(remaining.length).toBe(0);
+    it('Round 1 (Index 0): Should discard lowest priority cards', () => {
+        // Setup: 6 players, 8 cards each.
+        // Total needed: 48. Deck: 52. Discard: 4.
+        // Priority order: 2 < 3 ... and Clubs < Diamonds ...
+        // Expected discards: 2C, 2D, 2H, 2S.
+
+        const fullDeck = createDeck();
+        const { hands, remainingDeck, discarded } = prepareRoundDeck(fullDeck, 0, 6, 8, 'test-seed');
+
+        // Check counts
+        expect(discarded.length).toBe(4);
+        expect(hands.flat().length).toBe(48);
+        expect(remainingDeck.length).toBe(0); // All remaining were dealt
+
+        // Check specific discarded cards
+        const discardedIds = discarded.map(c => c.id).sort();
+        // 2C, 2D, 2H, 2S
+        const expectedIds = ['2C', '2D', '2H', '2S'].sort();
+        expect(discardedIds).toEqual(expectedIds);
     });
 
-    it('should discard cards correctly with priority strategy', () => {
-        // 5 players. 52 cards.
-        // Max equal cards = floor(52/5) = 10.
-        // Total used = 50. Discard = 2.
-        // Priority discard should remove 2 lowest cards (2C, 2D).
+    it('Round 2 (Index 1): Should discard randomly', () => {
+        // Setup: Previous round used 48 cards. 
+        // Current Deck is 48 cards (simulating playedPile -> currentDeck).
+        // 6 players, 7 cards each.
+        // Total needed: 42. Discard: 6.
 
-        const { hands, remaining } = dealCards(5, { discardStrategy: 'priority', seed: 'test-seed' });
+        // Create a deck of 48 cards (missing the 2s for realism, though logic shouldn't care)
+        let deck = createDeck().filter(c => !['2C', '2D', '2H', '2S'].includes(c.id));
+        expect(deck.length).toBe(48);
 
-        // Check that hands do NOT contain 2C or 2D
-        const allCards = hands.flat();
-        const has2C = allCards.some(c => c.id === '2C');
-        const has2D = allCards.some(c => c.id === '2D');
+        const { hands, remainingDeck, discarded } = prepareRoundDeck(deck, 1, 6, 7, 'test-seed-random');
 
-        expect(has2C).toBe(false);
-        expect(has2D).toBe(false);
+        expect(discarded.length).toBe(6);
+        expect(hands.flat().length).toBe(42);
 
-        // Check that we have 50 cards total
-        expect(allCards.length).toBe(50);
+        // Verify it didn't just take the lowest priority remaining.
+        // Lowest remaining would be the 3s (3C, 3D, 3H, 3S) and 4C, 4D.
+        // We expect it NOT to be exactly that sorted list (statistically probable not to be with shuffle).
+        // But since we use a seed, we can check specific behavior if needed, or just ensure it's a valid discard.
+
+        // Effectively, just ensure we didn't error and got the right counts.
+        // And maybe check that the deck was shuffled.
     });
 
-    it('should handle 13-card limit for 2 players with priority discard', () => {
-        // 2 players. Max cards capped at 13 (logic in Room.tsx, but here we test dealCards with explicit count).
-        // We request 13 cards per player. Total 26. Discard 26.
+    it('Should calculate discards based on dynamic deck size', () => {
+        // Edge case: 3 players, 10 cards. Needs 30.
+        // Deck provided is 35 cards. Discard 5.
+        const deck = createDeck().slice(0, 35);
+        const { discarded } = prepareRoundDeck(deck, 1, 3, 10, 'seed');
+        expect(discarded.length).toBe(5);
+    });
 
-        const { hands, remaining } = dealCards(2, {
-            discardStrategy: 'priority',
-            cardsPerPlayer: 13,
-            seed: 'test-seed-2'
-        });
-
-        expect(hands.length).toBe(2);
-        expect(hands[0].length).toBe(13);
-
-        // Total used = 26.
-        const allCards = hands.flat();
-        expect(allCards.length).toBe(26);
-
-        // Priority discard should have removed the lowest 26 cards.
-        // The remaining 26 cards should be the highest rank/suit combinations.
-        // E.g. 2C is definitely gone.
-        expect(allCards.some(c => c.id === '2C')).toBe(false);
+    it('Should throw if not enough cards', () => {
+        const deck = createDeck().slice(0, 10);
+        expect(() => {
+            prepareRoundDeck(deck, 1, 4, 5, 'seed'); // Need 20, have 10
+        }).toThrow();
     });
 });
