@@ -29,63 +29,73 @@ export function shuffleDeck(deck: Card[], seed?: string): Card[] {
     return newDeck;
 }
 
-interface DealOptions {
-    seed?: string;
-    discardStrategy?: 'random' | 'priority';
-    cardsPerPlayer?: number; // Override if needed, otherwise calculated
+interface DealResult {
+    hands: Card[][];
+    remainingDeck: Card[];
+    discarded: Card[];
 }
 
-export function dealCards(numPlayers: number, options: DealOptions = {}): { hands: Card[][], remaining: Card[] } {
-    let deck = createDeck();
-    const cardsPerPlayer = options.cardsPerPlayer || Math.floor(52 / numPlayers);
-    const totalCardsNeeded = numPlayers * cardsPerPlayer;
-    const cardsToDiscard = 52 - totalCardsNeeded;
+export function prepareRoundDeck(
+    currentDeck: Card[],
+    roundIndex: number,
+    numPlayers: number,
+    cardsPerPlayer: number,
+    seed: string
+): DealResult {
+    let deck = [...currentDeck];
+    const totalNeeded = numPlayers * cardsPerPlayer;
+    const cardsToDiscard = deck.length - totalNeeded;
 
-    if (options.discardStrategy === 'priority' && cardsToDiscard > 0) {
-        // Priority Discard: Remove lowest cards first.
-        // Order: 2♣, 2♦, 2♥, 2♠, 3♣... (Rank primary, Suit secondary)
-        // Suit order for sorting: Clubs (0), Diamonds (1), Hearts (2), Spades (3)
-        // We want to REMOVE the lowest.
+    let discarded: Card[] = [];
 
-        // Sort Low to High
-        deck.sort((a, b) => {
-            if (a.rank !== b.rank) return a.rank - b.rank;
-            return SUITS.indexOf(a.suit) - SUITS.indexOf(b.suit);
-        });
-
-        // Remove the first 'cardsToDiscard' cards (the lowest ones)
-        // The remaining cards are the "High" cards.
-        deck = deck.slice(cardsToDiscard);
+    if (cardsToDiscard < 0) {
+        throw new Error(`Not enough cards! Needed ${totalNeeded}, have ${deck.length}`);
     }
 
-    // Now shuffle the deck (either full 52 if random discard, or the subset if priority)
-    // Wait, if 'random' discard, we shuffle 52 then take top N.
-    // If 'priority' discard, we filtered first, then shuffle the remaining.
+    if (cardsToDiscard > 0) {
+        if (roundIndex === 0) {
+            // Priority Discard: Remove lowest rank/suit
+            // Sort Ascending (Lowest first)
+            // Priority: Rank (primary), Suit (secondary)
+            deck.sort((a, b) => {
+                if (a.rank !== b.rank) return a.rank - b.rank;
+                return SUITS.indexOf(a.suit) - SUITS.indexOf(b.suit);
+            });
+            discarded = deck.slice(0, cardsToDiscard);
+            deck = deck.slice(cardsToDiscard);
+        } else {
+            // Random Discard
+            // Shuffle first
+            deck = shuffleDeck(deck, seed + '-discard');
+            discarded = deck.slice(0, cardsToDiscard);
+            deck = deck.slice(cardsToDiscard);
+        }
+    }
 
-    deck = shuffleDeck(deck, options.seed);
-
-    // If random discard, we just take the first totalCardsNeeded.
-    // The rest are "remaining" (discarded).
+    // Now deck has exactly 'totalNeeded' cards
+    // Shuffle for dealing
+    deck = shuffleDeck(deck, seed + '-deal');
 
     const hands: Card[][] = Array.from({ length: numPlayers }, () => []);
     let cardIndex = 0;
 
     for (let i = 0; i < cardsPerPlayer; i++) {
         for (let p = 0; p < numPlayers; p++) {
-            if (cardIndex < deck.length) {
-                hands[p].push(deck[cardIndex]);
-                cardIndex++;
-            }
+            hands[p].push(deck[cardIndex++]);
         }
     }
 
-    // Sort hands for player convenience
+    // Sort hands for display (Suit then Rank Descending)
     hands.forEach(hand => {
         hand.sort((a, b) => {
             if (a.suit !== b.suit) return SUITS.indexOf(a.suit) - SUITS.indexOf(b.suit);
-            return b.rank - a.rank; // Descending rank
+            return b.rank - a.rank;
         });
     });
 
-    return { hands, remaining: deck.slice(cardIndex) };
+    return {
+        hands,
+        remainingDeck: deck.slice(cardIndex),
+        discarded
+    };
 }

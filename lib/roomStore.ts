@@ -1,131 +1,134 @@
 /**
  * Unified Room Storage Layer
  * 
- * This module provides a single, coherent interface for persisting game state and actions.
- * - In production (with UPSTASH_REDIS_* env vars): Uses Redis
- * - In development (without Redis): Uses in-memory global maps
- * 
- * This prevents the scattered `(global as any).ROOMS` pattern and ensures
- * all state access goes through one consistent API.
+ * Uses Postgres for persistence.
  */
 
-import { Redis } from '@upstash/redis';
+import pool from './db';
 import { GameState, GameAction } from './types';
 
-// Initialize Redis if credentials are available
-const redis = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
-    ? new Redis({
-        url: process.env.UPSTASH_REDIS_REST_URL,
-        token: process.env.UPSTASH_REDIS_REST_TOKEN,
-    })
-    : null;
+// Ensure tables exist (Basic migration)
+const INIT_DB = `
+CREATE TABLE IF NOT EXISTS rooms (
+    code TEXT PRIMARY KEY,
+    state JSONB,
+    updated_at BIGINT
+);
 
-// In-memory fallback for local development (no Redis)
-// Only used when Redis is not configured
+CREATE TABLE IF NOT EXISTS actions (
+    id SERIAL PRIMARY KEY,
+    room_code TEXT,
+    action JSONB,
+    player_id TEXT,
+    timestamp BIGINT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+`;
+
+let dbInitialized = false;
+async function ensureDb() {
+    if (dbInitialized) return;
+    try {
+        await pool.query(INIT_DB);
+        dbInitialized = true;
+    } catch (e) {
+        console.error("DB Init Error:", e);
+    }
+}
+
+// In-memory fallback (only if DB fails completely, which shouldn't happen if configured)
 const ROOMS: Record<string, GameState> = {};
 const ACTIONS: Record<string, Array<{ action: GameAction; playerId: string; timestamp: number }>> = {};
 
-/**
- * Get the current game state for a room
- * @param roomCode - The room code
- * @returns GameState if found, null otherwise
- */
 export async function getGameState(roomCode: string): Promise<GameState | null> {
-    if (redis) {
-        return await redis.get<GameState>(`room:${roomCode}:state`);
-    } else {
+    await ensureDb();
+    try {
+        const res = await pool.query('SELECT state FROM rooms WHERE code = $1', [roomCode]);
+        if (res.rows.length > 0) return res.rows[0].state;
+        return null;
+    } catch (e) {
+        console.error("DB Get Error:", e);
         return ROOMS[roomCode] || null;
     }
 }
 
-/**
- * Set/update the game state for a room
- * Automatically adds a timestamp for change detection
- * @param roomCode - The room code
- * @param state - The new game state
- * @param ttlSeconds - Time to live in seconds (default: 24 hours)
- */
 export async function setGameState(roomCode: string, state: GameState, ttlSeconds: number = 86400): Promise<void> {
+    await ensureDb();
     const stateWithTimestamp: GameState = {
         ...state,
         lastUpdate: Date.now(),
     };
-
-    if (redis) {
-        await redis.set(`room:${roomCode}:state`, stateWithTimestamp, { ex: ttlSeconds });
-    } else {
+    try {
+        await pool.query(
+            `INSERT INTO rooms (code, state, updated_at) VALUES ($1, $2, $3)
+             ON CONFLICT (code) DO UPDATE SET state = $2, updated_at = $3`,
+            [roomCode, stateWithTimestamp, Date.now()]
+        );
+    } catch (e) {
+        console.error("DB Set Error:", e);
         ROOMS[roomCode] = stateWithTimestamp;
     }
 }
 
-/**
- * Delete a room's state
- * @param roomCode - The room code
- */
 export async function deleteGameState(roomCode: string): Promise<void> {
-    if (redis) {
-        await redis.del(`room:${roomCode}:state`);
-    } else {
+    await ensureDb();
+    try {
+        await pool.query('DELETE FROM rooms WHERE code = $1', [roomCode]);
+        await pool.query('DELETE FROM actions WHERE room_code = $1', [roomCode]);
+    } catch (e) {
+        console.error("DB Delete Error:", e);
         delete ROOMS[roomCode];
     }
 }
 
-/**
- * Push an action to the pending actions queue for a room
- * Used by non-hosts to send actions to the host
- * @param roomCode - The room code
- * @param action - The game action
- * @param playerId - The player who sent the action
- */
 export async function pushAction(
     roomCode: string,
     action: GameAction,
     playerId: string
 ): Promise<void> {
-    const actionWithMeta = {
-        action,
-        playerId,
-        timestamp: Date.now(),
-    };
-
-    if (redis) {
-        const key = `room:${roomCode}:actions`;
-        await redis.lpush(key, JSON.stringify(actionWithMeta));
-        await redis.expire(key, 3600); // 1 hour TTL for actions
-    } else {
-        if (!ACTIONS[roomCode]) {
-            ACTIONS[roomCode] = [];
-        }
-        ACTIONS[roomCode].push(actionWithMeta);
+    await ensureDb();
+    const timestamp = Date.now();
+    try {
+        await pool.query(
+            'INSERT INTO actions (room_code, action, player_id, timestamp) VALUES ($1, $2, $3, $4)',
+            [roomCode, action, playerId, timestamp]
+        );
+    } catch (e) {
+        console.error("DB Push Action Error:", e);
+        if (!ACTIONS[roomCode]) ACTIONS[roomCode] = [];
+        ACTIONS[roomCode].push({ action, playerId, timestamp });
     }
 }
 
-/**
- * Drain all pending actions for a room (host only)
- * Returns actions in the order they were received
- * @param roomCode - The room code
- * @returns Array of actions with metadata
- */
 export async function drainActions(
     roomCode: string
 ): Promise<Array<{ action: GameAction; playerId: string; timestamp: number }>> {
-    if (redis) {
-        const key = `room:${roomCode}:actions`;
-        const actionStrings = await redis.lrange<string>(key, 0, -1);
-        const actions = actionStrings.map(s => JSON.parse(s)).reverse(); // Reverse to get correct order
-        await redis.del(key);
-        return actions;
-    } else {
+    await ensureDb();
+    try {
+        // Get all actions ordered by ID (insertion order)
+        const res = await pool.query(
+            'SELECT action, player_id, timestamp FROM actions WHERE room_code = $1 ORDER BY id ASC',
+            [roomCode]
+        );
+
+        // Delete them
+        if (res.rows.length > 0) {
+            await pool.query('DELETE FROM actions WHERE room_code = $1', [roomCode]);
+        }
+
+        return res.rows.map(row => ({
+            action: row.action,
+            playerId: row.player_id,
+            timestamp: parseInt(row.timestamp)
+        }));
+    } catch (e) {
+        console.error("DB Drain Actions Error:", e);
         const actions = ACTIONS[roomCode] || [];
-        ACTIONS[roomCode] = []; // Clear the queue
+        ACTIONS[roomCode] = [];
         return actions;
     }
 }
 
-/**
- * Check if Redis is configured
- * @returns true if Redis is available, false if using in-memory fallback
- */
 export function isRedisEnabled(): boolean {
-    return redis !== null;
+    return true; // Use DB as persistence layer
 }

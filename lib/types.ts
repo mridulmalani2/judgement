@@ -46,10 +46,12 @@ export interface GameState {
     scoresHistory: { [playerId: string]: number }[]; // History of scores per round
     settings: GameSettings;
     lastUpdate?: number; // Timestamp for change detection in polling mode
+    currentDeck: Card[]; // Persistent deck that shrinks over time
+    playedPile: Card[]; // Cards played in the current round
 }
 
 export type GameAction =
-    | { type: 'START_GAME' }
+    | { type: 'START_GAME', payload?: { initialCardsPerPlayer: number } }
     | { type: 'BET', playerId: string, bet: number }
     | { type: 'PLAY_CARD', playerId: string, card: Card }
     | { type: 'NEXT_ROUND' }

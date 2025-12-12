@@ -5,7 +5,7 @@ import Head from 'next/head';
 import { v4 as uuidv4 } from 'uuid';
 import { P2PManager, P2PEvent } from '../../lib/p2p';
 import { GameState, Player, Card, GameAction, Suit, GameSettings } from '../../lib/types';
-import { createDeck, shuffleDeck, dealCards } from '../../lib/deck';
+import { createDeck, shuffleDeck, prepareRoundDeck } from '../../lib/deck';
 import { getTrickWinner, isValidPlay, calculateScores, canBet, getAutoPlayCard } from '../../lib/gameEngine';
 import PlayerSeat from '../../components/PlayerSeat';
 import Hand from '../../components/Hand';
@@ -18,6 +18,7 @@ import HostSettings from '../../components/HostSettings';
 import { Copy, Share2, MessageCircle, Menu, Users, Crown, Settings as SettingsIcon, UserX, UserCheck, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
+import GameSetupModal from '../../components/GameSetupModal'; // Will create this component
 
 export default function Room() {
     const router = useRouter();
@@ -32,6 +33,7 @@ export default function Room() {
     const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
     const [errorMessage, setErrorMessage] = useState<string>('');
     const [showSettings, setShowSettings] = useState(false);
+    const [showSetup, setShowSetup] = useState(false);
 
     // Refs for state access in callbacks
     const gameStateRef = useRef<GameState | null>(null);
@@ -127,7 +129,7 @@ export default function Room() {
                     const state = await res.json();
                     setGameState(state);
                     setConnectionStatus('connected');
-                } else if (res.status === 404 && !isCreator) {
+                } else if (res.status === 404 && !isHost) { // isCreator check from ref is tricky, use state
                     // Room doesn't exist yet - non-host should see an error
                     setConnectionStatus('error');
                     setErrorMessage('Room not found. Please check the room code or wait for the host to create it.');
@@ -224,7 +226,9 @@ export default function Room() {
                 discardStrategy: 'random',
                 autoPlayEnabled: true,
                 allowSpectators: true
-            }
+            },
+            currentDeck: [],
+            playedPile: []
         };
         setGameState(newState);
 
@@ -258,33 +262,63 @@ export default function Room() {
 
     // --- Game Logic (Host Only) ---
 
-    const startRound = (state: GameState) => {
+    // Helper to start a round (or continue game)
+    const playRound = (state: GameState, seed: string) => {
         const numPlayers = state.players.length;
-        const maxCards = Math.min(Math.floor(52 / numPlayers), 13);
-        state.cardsPerPlayer = maxCards - state.roundIndex;
 
-        if (state.cardsPerPlayer <= 0) {
+        // Round 1 calculates cardsPerPlayer from user input (already set in START_GAME)
+        // Subsequent rounds: cardsPerPlayer - 1
+        if (state.roundIndex > 0) {
+            state.cardsPerPlayer = state.cardsPerPlayer - 1;
+        }
+
+        if (state.cardsPerPlayer < 1) {
             state.phase = 'finished';
             return;
         }
 
-        const { hands } = dealCards(numPlayers, {
-            seed: state.deckSeed + state.roundIndex,
-            discardStrategy: state.settings.discardStrategy,
-            cardsPerPlayer: state.cardsPerPlayer
-        });
+        try {
+            // prepareRoundDeck handles the discard strategy (priority for round 0, random for others)
+            // and dealing.
+            const { hands, remainingDeck, discarded } = prepareRoundDeck(
+                state.currentDeck,
+                state.roundIndex,
+                numPlayers,
+                state.cardsPerPlayer,
+                seed
+            );
 
-        state.players.forEach((p, i) => {
-            p.hand = hands[i];
-            p.currentBet = null;
-            p.tricksWon = 0;
-        });
+            // Update state with new hands and new currentDeck (the remaining cards)
+            state.players.forEach((p, i) => {
+                p.hand = hands[i];
+                p.currentBet = null;
+                p.tricksWon = 0;
+            });
 
-        state.trump = ['spades', 'hearts', 'diamonds', 'clubs'][state.roundIndex % 4] as Suit;
-        state.dealerSeatIndex = state.roundIndex % numPlayers;
-        state.currentLeaderSeatIndex = (state.dealerSeatIndex + 1) % numPlayers;
-        state.phase = 'betting';
-        state.currentTrick = [];
+            // The 'currentDeck' in state becomes the remaining cards (not dealt, not discarded)
+            // Actually, in our logic "currentDeck" holds the stack.
+            // Wait, if we discard and deal, the remaining cards are... 0?
+            // "Round 1... remove exactly cardsToDiscard... deal C cards"
+            // If cardsToDiscard = 52 - needed.
+            // Then remaining is 0.
+            // This is handled correctly by prepareRoundDeck. 
+            // state.currentDeck should update to whatever is left (likely empty array).
+            state.currentDeck = remainingDeck;
+
+            // Trump rotation: Spades -> Hearts -> Diamonds -> Clubs
+            const trumpOrder: Suit[] = ['spades', 'hearts', 'diamonds', 'clubs'];
+            state.trump = trumpOrder[state.roundIndex % 4];
+
+            state.dealerSeatIndex = state.roundIndex % numPlayers;
+            state.currentLeaderSeatIndex = (state.dealerSeatIndex + 1) % numPlayers;
+            state.phase = 'betting';
+            state.currentTrick = [];
+            state.playedPile = []; // Clear played pile for new round
+
+        } catch (e) {
+            console.error("Failed to start round:", e);
+            state.phase = 'finished'; // Should not happen if math is right
+        }
     };
 
     const processAction = (action: GameAction) => {
@@ -318,10 +352,26 @@ export default function Room() {
 
             case 'START_GAME':
                 if (newState.phase !== 'lobby' && newState.phase !== 'finished') return;
+
+                // Initialize match
                 newState.roundIndex = 0;
                 newState.scoresHistory = [];
-                newState.players.forEach((p: Player) => { p.totalPoints = 0; p.tricksWon = 0; p.currentBet = null; });
-                startRound(newState);
+                newState.players.forEach((p: Player) => { p.totalPoints = 0; p.tricksWon = 0; p.currentBet = null; p.hand = []; });
+
+                // Set initial deck (52 cards)
+                newState.currentDeck = createDeck();
+                newState.playedPile = [];
+
+                // Set initial cards per player
+                const payload = (action as any).payload;
+                if (payload && payload.initialCardsPerPlayer) {
+                    newState.cardsPerPlayer = payload.initialCardsPerPlayer;
+                } else {
+                    // Default fallback
+                    newState.cardsPerPlayer = Math.floor(52 / newState.players.length);
+                }
+
+                playRound(newState, newState.deckSeed);
                 break;
 
             case 'BET':
@@ -359,16 +409,31 @@ export default function Room() {
                 if (newState.currentTrick.length === newState.players.length) {
                     const winnerSeatIndex = getTrickWinner(newState.currentTrick, newState.trump);
                     newState.players[winnerSeatIndex].tricksWon = (newState.players[winnerSeatIndex].tricksWon || 0) + 1;
+
+                    // Move trick cards to playedPile
+                    const trickCards = newState.currentTrick.map(pc => pc.card);
+                    if (!newState.playedPile) newState.playedPile = []; // Safety check
+                    newState.playedPile.push(...trickCards);
+
                     newState.currentTrick = [];
                     newState.currentLeaderSeatIndex = winnerSeatIndex;
 
                     if (newState.players[0].hand.length === 0) {
+                        // Round finished
                         const roundScores = calculateScores(newState.players);
                         newState.players.forEach(p => {
                             p.totalPoints = (p.totalPoints || 0) + (roundScores[p.id] || 0);
                         });
                         newState.roundIndex++;
-                        startRound(newState);
+
+                        // Prepare deck for next round: Recycled played cards become the new deck
+                        // "The deck continually shrinks" -> We only use what was played?
+                        // "Every round discards some number of cards permanently from this same deck"
+                        // If we recycle playedPile, that matches the logic (we dealt N, we gather N, next round uses N).
+                        newState.currentDeck = [...newState.playedPile];
+                        newState.playedPile = [];
+
+                        playRound(newState, newState.deckSeed + newState.roundIndex);
                     }
                 }
                 break;
@@ -661,7 +726,7 @@ export default function Room() {
                             </div>
 
                             <button
-                                onClick={() => sendAction({ type: 'START_GAME' })}
+                                onClick={() => setShowSetup(true)}
                                 className="w-full py-4 bg-primary text-white font-bold rounded-2xl text-xl shadow-lg shadow-primary/30 hover:shadow-primary/50 transition-all"
                             >
                                 Start Game
@@ -669,6 +734,20 @@ export default function Room() {
                         </div>
                     </motion.div>
                 )}
+
+                {/* Setup Modal */}
+                <GameSetupModal
+                    isOpen={showSetup}
+                    onClose={() => setShowSetup(false)}
+                    onStartGame={(numCards) => {
+                        sendAction({
+                            type: 'START_GAME',
+                            payload: { initialCardsPerPlayer: numCards }
+                        });
+                        setShowSetup(false);
+                    }}
+                    playerCount={gameState.players.length}
+                />
 
                 {gameState.phase === 'lobby' && !me?.isHost && (
                     <motion.div
