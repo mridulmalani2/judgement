@@ -33,6 +33,7 @@ export default function Room() {
     const [isHost, setIsHost] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
     const [errorMessage, setErrorMessage] = useState<string>('');
+    const [errorDetails, setErrorDetails] = useState<string>('');
     const [showSettings, setShowSettings] = useState(false);
     const [showSetup, setShowSetup] = useState(false);
 
@@ -62,6 +63,28 @@ export default function Room() {
 
         // Determine if we are technically the "Creator" from the URL
         let isCreator = router.query.host === 'true';
+
+        // First, check if multiplayer backend is healthy
+        fetch('/api/health')
+            .then(async (res) => {
+                const health = await res.json();
+                if (!health.ok) {
+                    console.error('❌ Multiplayer backend not healthy:', health);
+                    // Don't block completely - still try to connect but warn user
+                    if (!health.redis.urlConfigured || !health.redis.tokenConfigured) {
+                        console.warn('⚠️ Redis not fully configured. Multiplayer may not work correctly.');
+                        setErrorDetails('Server configuration issue: ' + health.message);
+                    } else if (!health.redis.connected) {
+                        console.warn('⚠️ Redis connection failed:', health.redis.error);
+                        setErrorDetails('Redis connection failed: ' + health.redis.error);
+                    }
+                } else {
+                    console.log('✅ Multiplayer backend healthy');
+                }
+            })
+            .catch((e) => {
+                console.warn('Could not check health endpoint:', e);
+            });
 
         // Try to fetch existing state first (to handle refreshes)
         fetch(`/api/rooms/${roomCode}/sync`)
@@ -184,8 +207,18 @@ export default function Room() {
                     setGameState(state);
                     setConnectionStatus('connected');
                 } else if (res.status === 404) {
-                    setConnectionStatus('error');
-                    setErrorMessage('Room not found. Host may have disconnected or is setting up.');
+                    // Check if this might be a Redis configuration issue
+                    const healthRes = await fetch('/api/health').catch(() => null);
+                    const health = healthRes ? await healthRes.json().catch(() => null) : null;
+
+                    if (health && !health.ok) {
+                        setConnectionStatus('error');
+                        setErrorMessage('Multiplayer server not available');
+                        setErrorDetails(health.message || 'Redis configuration issue detected');
+                    } else {
+                        setConnectionStatus('error');
+                        setErrorMessage('Room not found. Host may have disconnected or is still setting up.');
+                    }
                 }
             } catch (error) {
                 console.error('Polling error:', error);
@@ -421,7 +454,15 @@ export default function Room() {
             <div className="text-center max-w-md">
                 <div className="text-red-500 text-5xl mb-4">⚠️</div>
                 <h2 className="text-2xl font-bold mb-2">Connection Error</h2>
-                <p className="text-slate-400 mb-6">{errorMessage}</p>
+                <p className="text-slate-400 mb-4">{errorMessage}</p>
+                {errorDetails && (
+                    <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 mb-6 text-left">
+                        <p className="text-red-400 text-sm font-mono">{errorDetails}</p>
+                        <p className="text-slate-500 text-xs mt-2">
+                            If you are the site admin, ensure both UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are correctly set in your environment variables.
+                        </p>
+                    </div>
+                )}
                 <button
                     onClick={() => window.location.reload()}
                     className="px-6 py-3 bg-white/10 hover:bg-white/20 rounded-full font-bold transition-colors flex items-center gap-2 mx-auto"
@@ -434,13 +475,18 @@ export default function Room() {
 
     if (!gameState) return (
         <div className="min-h-screen flex items-center justify-center text-white bg-gradient-to-br from-slate-900 to-black">
-            <div className="text-center">
+            <div className="text-center max-w-md px-4">
                 <div className="animate-spin w-12 h-12 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
                 <h2 className="text-xl font-bold">Connecting to Room...</h2>
                 <p className="text-slate-400 mt-2">Code: {roomCode}</p>
                 <p className="text-xs text-slate-600 mt-4">
                     {usePollingRef.current ? 'Using reliable polling mode...' : 'Establishing P2P connection...'}
                 </p>
+                {errorDetails && (
+                    <div className="mt-6 bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 text-left">
+                        <p className="text-yellow-400 text-xs font-mono">{errorDetails}</p>
+                    </div>
+                )}
             </div>
         </div>
     );
