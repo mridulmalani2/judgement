@@ -1,4 +1,4 @@
-import { getTrickWinner, calculateScores, canBet, getAutoPlayCard } from './gameEngine';
+import { getTrickWinner, calculateScores, canBet, getAutoPlayCard, isValidPlay } from './gameEngine';
 import { Card, PlayedCard, Player, Suit } from './types';
 
 describe('Game Engine', () => {
@@ -69,6 +69,74 @@ describe('Game Engine', () => {
             // Hand has no diamonds. Should play lowest non-trump (2H or 5C).
             const card = getAutoPlayCard(hand, trick, trump);
             expect(card.id).toBe('2H');
+        });
+    });
+
+    describe('isValidPlay', () => {
+        const trump: Suit = 'spades';
+        const hand: Card[] = [
+            { id: '2H', rank: 2, suit: 'hearts' },
+            { id: '5C', rank: 5, suit: 'clubs' },
+        ];
+
+        it('should allow any card if leading', () => {
+            expect(isValidPlay(hand[0], hand, [], trump)).toBe(true);
+        });
+
+        it('should require following suit if possible', () => {
+            // Leading Hearts. Must play 2H.
+            const trick: PlayedCard[] = [{ seatIndex: 0, card: { id: 'KH', rank: 13, suit: 'hearts' } }];
+            expect(isValidPlay(hand[0], hand, trick, trump)).toBe(true); // 2H is valid
+            expect(isValidPlay(hand[1], hand, trick, trump)).toBe(false); // 5C is invalid
+        });
+
+        it('should allow any card if cannot follow suit', () => {
+            // Leading Diamonds. Hand has none. Can play anything.
+            const trick: PlayedCard[] = [{ seatIndex: 0, card: { id: 'KD', rank: 13, suit: 'diamonds' } }];
+            expect(isValidPlay(hand[0], hand, trick, trump)).toBe(true);
+            expect(isValidPlay(hand[1], hand, trick, trump)).toBe(true);
+        });
+    });
+
+    describe('getTrickWinner', () => {
+        const trump: Suit = 'spades';
+        // Mock Cards: 10H, KH, 2S (Trump), 5C
+        const trickBase: PlayedCard[] = [
+            { seatIndex: 0, card: { id: '10H', rank: 10, suit: 'hearts' } }, // Lead
+            { seatIndex: 1, card: { id: 'KH', rank: 13, suit: 'hearts' } },
+        ];
+
+        it('should return highest rank of lead suit if no trumps', () => {
+            const trick = [...trickBase, { seatIndex: 2, card: { id: '2H', rank: 2, suit: 'hearts' } }];
+            // KH (seat 1) should win
+            expect(getTrickWinner(trick, trump)).toBe(1);
+        });
+
+        it('should return trump player if trump played', () => {
+            const trick = [...trickBase, { seatIndex: 2, card: { id: '2S', rank: 2, suit: 'spades' } }];
+            // 2S (seat 2) is trump. Even though low rank, it beats Hearts.
+            expect(getTrickWinner(trick, trump)).toBe(2);
+        });
+
+        it('should return highest trump if multiple trumps', () => {
+            const trick = [
+                ...trickBase, // 10H, KH
+                { seatIndex: 2, card: { id: '2S', rank: 2, suit: 'spades' } },
+                { seatIndex: 3, card: { id: 'AS', rank: 14, suit: 'spades' } }
+            ];
+            // AS (seat 3) beats 2S
+            expect(getTrickWinner(trick, trump)).toBe(3);
+        });
+
+        it('should ignore higher ranks of non-lead non-trump suits', () => {
+            // Lead: 10H. Played: KH (winner so far). Played: AC (Clubs, high rank but off suit).
+            const trick = [
+                { seatIndex: 0, card: { id: '10H', rank: 10, suit: 'hearts' } },
+                { seatIndex: 1, card: { id: 'KH', rank: 13, suit: 'hearts' } },
+                { seatIndex: 2, card: { id: 'AC', rank: 14, suit: 'clubs' } }
+            ];
+            // AC is off-suit and not trump. KH (seat 1) still wins.
+            expect(getTrickWinner(trick, trump)).toBe(1);
         });
     });
 });
