@@ -1,0 +1,673 @@
+/**
+ * Simplified Multiplayer Game Page
+ *
+ * No P2P, no room codes - just pure server polling.
+ * First person to join becomes host, others join automatically.
+ * Works reliably across all networks (corporate, educational, etc.)
+ */
+
+import { useEffect, useState, useRef, useCallback } from 'react';
+import { useRouter } from 'next/router';
+import Head from 'next/head';
+import { v4 as uuidv4 } from 'uuid';
+import { GameState, Player, Card, GameAction, Suit, GameSettings } from '../lib/types';
+import { processGameAction } from '../lib/gameLogic';
+import { getTrickWinner, isValidPlay, calculateScores, canBet, getAutoPlayCard } from '../lib/gameEngine';
+import PlayerSeat from '../components/PlayerSeat';
+import Hand from '../components/Hand';
+import CardComponent from '../components/Card';
+import BetInput from '../components/BetInput';
+import Leaderboard from '../components/Leaderboard';
+import GameHUD from '../components/GameHUD';
+import HostSettings from '../components/HostSettings';
+import GameSetupModal from '../components/GameSetupModal';
+import { Copy, Menu, Users, Crown, Settings as SettingsIcon, RefreshCw, Wifi, WifiOff } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import clsx from 'clsx';
+
+const POLL_INTERVAL = 500; // 500ms for responsive updates
+
+export default function Play() {
+    const router = useRouter();
+
+    // Player identity
+    const [myId, setMyId] = useState<string>('');
+    const [myName, setMyName] = useState<string>('');
+    const [nameInput, setNameInput] = useState<string>('');
+    const [needsName, setNeedsName] = useState(false);
+
+    // Game state
+    const [gameState, setGameState] = useState<GameState | null>(null);
+    const [isHost, setIsHost] = useState(false);
+    const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
+    const [errorMessage, setErrorMessage] = useState<string>('');
+
+    // UI state
+    const [showSettings, setShowSettings] = useState(false);
+    const [showSetup, setShowSetup] = useState(false);
+
+    // Refs for callbacks
+    const gameStateRef = useRef<GameState | null>(null);
+    const pollingRef = useRef<NodeJS.Timeout | null>(null);
+    const isHostRef = useRef(false);
+    const myIdRef = useRef<string>('');
+
+    // Sync refs with state
+    useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
+    useEffect(() => { isHostRef.current = isHost; }, [isHost]);
+    useEffect(() => { myIdRef.current = myId; }, [myId]);
+
+    // Initialize player identity
+    useEffect(() => {
+        const storedName = localStorage.getItem('judgment_name');
+        const storedId = localStorage.getItem('judgment_id') || uuidv4();
+
+        if (!localStorage.getItem('judgment_id')) {
+            localStorage.setItem('judgment_id', storedId);
+        }
+
+        setMyId(storedId);
+        myIdRef.current = storedId;
+
+        if (storedName) {
+            setMyName(storedName);
+            initializeConnection(storedId, storedName);
+        } else {
+            setNeedsName(true);
+        }
+
+        return () => {
+            if (pollingRef.current) {
+                clearInterval(pollingRef.current);
+            }
+        };
+    }, []);
+
+    const initializeConnection = async (playerId: string, playerName: string) => {
+        setConnectionStatus('connecting');
+
+        try {
+            // Check if game exists
+            const res = await fetch('/api/game/state');
+
+            if (res.ok) {
+                // Game exists - join it
+                const existingState = await res.json();
+                setGameState(existingState);
+                gameStateRef.current = existingState;
+
+                // Check if I'm already the host
+                const meInState = existingState.players.find((p: Player) => p.id === playerId);
+                if (meInState?.isHost) {
+                    setIsHost(true);
+                    isHostRef.current = true;
+                }
+
+                // If I'm not in the game yet, send join action
+                if (!meInState) {
+                    await sendJoinAction(playerId, playerName);
+                }
+
+                setConnectionStatus('connected');
+                startPolling(playerId);
+            } else if (res.status === 404) {
+                // No game exists - I become the host
+                setIsHost(true);
+                isHostRef.current = true;
+                await createNewGame(playerId, playerName);
+                setConnectionStatus('connected');
+                startPolling(playerId);
+            } else {
+                throw new Error('Failed to connect to game server');
+            }
+        } catch (error) {
+            console.error('Connection error:', error);
+            setErrorMessage('Failed to connect. Please check your internet connection.');
+            setConnectionStatus('error');
+        }
+    };
+
+    const createNewGame = async (hostId: string, hostName: string) => {
+        const newPlayer: Player = {
+            id: hostId,
+            name: hostName,
+            seatIndex: 0,
+            isHost: true,
+            connected: true,
+            isAway: false,
+            currentBet: null,
+            tricksWon: 0,
+            totalPoints: 0,
+            hand: []
+        };
+
+        const newState: GameState = {
+            roomCode: 'default',
+            players: [newPlayer],
+            roundIndex: 0,
+            cardsPerPlayer: 0,
+            trump: 'spades',
+            dealerSeatIndex: 0,
+            currentLeaderSeatIndex: 0,
+            currentTrick: [],
+            phase: 'lobby',
+            deckSeed: uuidv4(),
+            scoresHistory: [],
+            settings: {
+                discardStrategy: 'random',
+                autoPlayEnabled: true,
+                allowSpectators: true
+            },
+            currentDeck: [],
+            playedPile: []
+        };
+
+        gameStateRef.current = newState;
+        setGameState(newState);
+
+        // Save to server
+        await fetch('/api/game/state', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newState)
+        });
+    };
+
+    const sendJoinAction = async (playerId: string, playerName: string) => {
+        await fetch('/api/game/state', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: { type: 'JOIN', playerId, payload: { name: playerName } },
+                playerId
+            })
+        });
+    };
+
+    const startPolling = (playerId: string) => {
+        if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+        }
+
+        const poll = async () => {
+            try {
+                // Get current state
+                const stateRes = await fetch('/api/game/state');
+                if (stateRes.ok) {
+                    const state = await stateRes.json();
+
+                    // Only update if state changed
+                    if (!gameStateRef.current || state.lastUpdate !== gameStateRef.current.lastUpdate) {
+                        gameStateRef.current = state;
+                        setGameState(state);
+
+                        // Update host status if it changed
+                        const me = state.players.find((p: Player) => p.id === playerId);
+                        if (me?.isHost && !isHostRef.current) {
+                            setIsHost(true);
+                            isHostRef.current = true;
+                        }
+                    }
+
+                    setConnectionStatus('connected');
+                } else if (stateRes.status === 404) {
+                    // Game was cleared - become host if we're the first to notice
+                    if (gameStateRef.current) {
+                        setGameState(null);
+                        gameStateRef.current = null;
+                        setIsHost(true);
+                        isHostRef.current = true;
+                        await createNewGame(playerId, myName || 'Player');
+                    }
+                }
+
+                // If I'm the host, process pending actions
+                if (isHostRef.current) {
+                    const actionsRes = await fetch('/api/game/state', { method: 'DELETE' });
+                    if (actionsRes.ok) {
+                        const { actions } = await actionsRes.json();
+                        if (actions && actions.length > 0) {
+                            actions.forEach((item: any) => {
+                                processAction(item.action);
+                            });
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Poll error:', error);
+            }
+        };
+
+        // Poll immediately, then at interval
+        poll();
+        pollingRef.current = setInterval(poll, POLL_INTERVAL);
+    };
+
+    const sendAction = async (action: GameAction) => {
+        if (isHostRef.current) {
+            // Host processes directly
+            processAction(action);
+        } else {
+            // Non-host sends to server queue
+            await fetch('/api/game/state', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action, playerId: myIdRef.current })
+            });
+        }
+    };
+
+    const processAction = (action: GameAction) => {
+        const currentState = gameStateRef.current;
+        if (!currentState) return;
+
+        try {
+            const newState = processGameAction(currentState, action);
+            gameStateRef.current = newState;
+            setGameState(newState);
+
+            // Save to server
+            fetch('/api/game/state', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newState)
+            }).catch(e => console.error('State sync error:', e));
+        } catch (e) {
+            console.warn('Action failed:', e);
+        }
+    };
+
+    const handleNameSubmit = () => {
+        if (!nameInput.trim()) return;
+        const name = nameInput.trim();
+        localStorage.setItem('judgment_name', name);
+        setMyName(name);
+        setNeedsName(false);
+        initializeConnection(myId, name);
+    };
+
+    const resetGame = async () => {
+        await fetch('/api/game/state?action=clear', { method: 'POST' });
+        window.location.reload();
+    };
+
+    // Autoplay Effect (Host Only)
+    useEffect(() => {
+        if (!isHost || !gameState || !gameState.settings.autoPlayEnabled) return;
+
+        const currentPlayer = gameState.players[gameState.currentLeaderSeatIndex];
+        if (!currentPlayer || !currentPlayer.isAway) return;
+
+        const timer = setTimeout(() => {
+            if (gameState.phase === 'betting') {
+                let bet = 0;
+                const currentBets = gameState.players
+                    .filter(p => p.currentBet !== null)
+                    .map(p => p.currentBet as number);
+
+                if (!canBet(bet, currentBets, gameState.players.length, gameState.cardsPerPlayer)) {
+                    bet = 1;
+                }
+                processAction({ type: 'BET', playerId: currentPlayer.id, bet });
+            } else if (gameState.phase === 'playing') {
+                try {
+                    const card = getAutoPlayCard(currentPlayer.hand, gameState.currentTrick, gameState.trump);
+                    processAction({ type: 'PLAY_CARD', playerId: currentPlayer.id, card });
+                } catch (e) {
+                    console.error('Autoplay error', e);
+                }
+            }
+        }, 2000);
+
+        return () => clearTimeout(timer);
+    }, [gameState, isHost]);
+
+    // Name entry screen
+    if (needsName) {
+        return (
+            <div className="min-h-screen flex items-center justify-center text-white bg-gradient-to-br from-slate-900 to-black p-4">
+                <Head><title>Join Game - Judgment</title></Head>
+                <div className="glass-panel p-8 w-full max-w-md text-center">
+                    <h1 className="text-3xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-pink-400">
+                        Welcome!
+                    </h1>
+                    <p className="text-slate-400 mb-6">Enter your name to join the game</p>
+
+                    <input
+                        type="text"
+                        placeholder="Your name"
+                        value={nameInput}
+                        onChange={(e) => setNameInput(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && handleNameSubmit()}
+                        className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all text-center text-lg mb-4"
+                        autoFocus
+                    />
+
+                    <button
+                        onClick={handleNameSubmit}
+                        disabled={!nameInput.trim()}
+                        className="w-full py-3 bg-primary hover:bg-primary/90 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-lg transition-all"
+                    >
+                        Join Game
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    // Error screen
+    if (connectionStatus === 'error') {
+        return (
+            <div className="min-h-screen flex items-center justify-center text-white bg-gradient-to-br from-slate-900 to-black p-4">
+                <Head><title>Connection Error - Judgment</title></Head>
+                <div className="text-center max-w-md">
+                    <WifiOff className="w-16 h-16 text-red-500 mx-auto mb-4" />
+                    <h2 className="text-2xl font-bold mb-2">Connection Error</h2>
+                    <p className="text-slate-400 mb-6">{errorMessage}</p>
+                    <button
+                        onClick={() => window.location.reload()}
+                        className="px-6 py-3 bg-white/10 hover:bg-white/20 rounded-full font-bold transition-colors flex items-center gap-2 mx-auto"
+                    >
+                        <RefreshCw className="w-5 h-5" /> Try Again
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    // Loading screen
+    if (!gameState) {
+        return (
+            <div className="min-h-screen flex items-center justify-center text-white bg-gradient-to-br from-slate-900 to-black">
+                <Head><title>Connecting... - Judgment</title></Head>
+                <div className="text-center">
+                    <div className="animate-spin w-12 h-12 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
+                    <h2 className="text-xl font-bold">Connecting...</h2>
+                    <p className="text-slate-400 mt-2">Setting up game</p>
+                </div>
+            </div>
+        );
+    }
+
+    const me = gameState.players.find(p => p.id === myId);
+    const isMyTurn = (gameState.phase === 'playing' || gameState.phase === 'betting') &&
+        gameState.players[gameState.currentLeaderSeatIndex]?.id === myId;
+
+    // Calculate forbidden bet
+    let forbiddenBet = -1;
+    if (gameState.phase === 'betting' && isMyTurn) {
+        const betsPlaced = gameState.players.filter(p => p.currentBet !== null).length;
+        if (betsPlaced === gameState.players.length - 1) {
+            const currentSum = gameState.players.reduce((sum, p) => sum + (p.currentBet || 0), 0);
+            forbiddenBet = gameState.cardsPerPlayer - currentSum;
+        }
+    }
+
+    const shareLink = typeof window !== 'undefined' ? window.location.href : '';
+
+    return (
+        <div className="min-h-screen text-foreground overflow-hidden flex flex-col bg-[url('/bg-texture.png')] bg-cover">
+            <Head><title>Judgment - Play</title></Head>
+
+            {/* HUD */}
+            {gameState.phase !== 'lobby' && gameState.phase !== 'finished' && (
+                <GameHUD
+                    players={gameState.players}
+                    currentRound={gameState.roundIndex + 1}
+                    trump={gameState.trump}
+                    dealerName={gameState.players[gameState.dealerSeatIndex]?.name}
+                />
+            )}
+
+            {/* Top Bar */}
+            <header className="p-4 flex justify-between items-center bg-black/20 backdrop-blur-sm z-20">
+                <div className="flex items-center gap-4">
+                    <button onClick={() => router.push('/')} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                        <Menu className="w-6 h-6 text-white" />
+                    </button>
+                    <div>
+                        <h1 className="text-xl font-bold text-white leading-none">Judgment</h1>
+                        <div className="text-xs text-slate-400 flex items-center gap-1">
+                            <span className={clsx("w-2 h-2 rounded-full", connectionStatus === 'connected' ? "bg-green-500" : "bg-yellow-500")}></span>
+                            {connectionStatus === 'connected' ? 'Connected' : 'Connecting...'}
+                            {isHost && <span className="ml-1 text-yellow-400">(Host)</span>}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                    {me?.isHost && (
+                        <>
+                            <button
+                                onClick={() => setShowSettings(true)}
+                                className="p-2 hover:bg-white/10 rounded-full transition-colors"
+                                title="Settings"
+                            >
+                                <SettingsIcon className="w-5 h-5 text-slate-300" />
+                            </button>
+                            <button
+                                onClick={resetGame}
+                                className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 text-xs font-bold rounded-full border border-red-500/30 transition-colors"
+                            >
+                                Reset Game
+                            </button>
+                        </>
+                    )}
+                    <button
+                        onClick={() => navigator.clipboard.writeText(shareLink)}
+                        className="p-2 hover:bg-white/10 rounded-full transition-colors"
+                        title="Copy Link"
+                    >
+                        <Copy className="w-5 h-5 text-slate-300" />
+                    </button>
+                </div>
+            </header>
+
+            {/* Game Area */}
+            <main className="flex-grow relative flex flex-col md:flex-row items-center justify-center p-4 overflow-hidden">
+                {/* Opponents (Mobile) */}
+                <div className="md:hidden w-full flex space-x-4 overflow-x-auto pb-4 mb-4 no-scrollbar z-10">
+                    {gameState.players.filter(p => p.id !== myId).map(player => (
+                        <div key={player.id} className="flex-shrink-0">
+                            <PlayerSeat
+                                player={player}
+                                isDealer={player.seatIndex === gameState.dealerSeatIndex}
+                                isCurrentTurn={player.seatIndex === gameState.currentLeaderSeatIndex}
+                                isMe={false}
+                                position="top"
+                            />
+                        </div>
+                    ))}
+                </div>
+
+                {/* Table Surface */}
+                <div className="relative w-full max-w-[90vw] md:max-w-3xl aspect-square md:aspect-video rounded-[3rem] glass border-2 border-white/5 shadow-2xl flex items-center justify-center overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-b from-slate-900/50 to-black/50"></div>
+
+                    {/* Center Trick */}
+                    <div className="relative z-10 w-48 h-48 md:w-64 md:h-64 flex items-center justify-center">
+                        <AnimatePresence>
+                            {gameState.currentTrick.map((played, i) => (
+                                <motion.div
+                                    key={`${played.seatIndex}-${played.card.id}`}
+                                    initial={{ scale: 0.5, opacity: 0, y: 50 }}
+                                    animate={{
+                                        scale: 1,
+                                        opacity: 1,
+                                        y: 0,
+                                        rotate: (i - (gameState.currentTrick.length - 1) / 2) * 10
+                                    }}
+                                    exit={{ scale: 0.5, opacity: 0 }}
+                                    className="absolute shadow-xl"
+                                    style={{ zIndex: i }}
+                                >
+                                    <CardComponent card={played.card} size="md" />
+                                    <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-xs font-bold bg-black/50 px-2 rounded-full whitespace-nowrap">
+                                        {gameState.players.find(p => p.seatIndex === played.seatIndex)?.name}
+                                    </div>
+                                </motion.div>
+                            ))}
+                        </AnimatePresence>
+                    </div>
+
+                    {/* Desktop Seats */}
+                    <div className="hidden md:block absolute inset-0 pointer-events-none">
+                        {gameState.players.map((player, i) => {
+                            const mySeat = gameState.players.findIndex(p => p.id === myId);
+                            const relativeIndex = (i - mySeat + gameState.players.length) % gameState.players.length;
+
+                            if (relativeIndex === 0) return null;
+
+                            const angle = ((relativeIndex / gameState.players.length) * 2 * Math.PI) + (Math.PI / 2);
+                            const radiusX = 40;
+                            const radiusY = 35;
+                            const x = 50 + radiusX * Math.cos(angle);
+                            const y = 50 + radiusY * Math.sin(angle);
+
+                            return (
+                                <div key={player.id} className="absolute transform -translate-x-1/2 -translate-y-1/2" style={{ left: `${x}%`, top: `${y}%` }}>
+                                    <PlayerSeat
+                                        player={player}
+                                        isDealer={player.seatIndex === gameState.dealerSeatIndex}
+                                        isCurrentTurn={player.seatIndex === gameState.currentLeaderSeatIndex}
+                                        isMe={false}
+                                        position="top"
+                                    />
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            </main>
+
+            {/* My Hand */}
+            <footer className="relative z-20 pb-safe">
+                {me && (
+                    <div className="flex flex-col items-center">
+                        <div className="mb-2">
+                            <PlayerSeat
+                                player={me}
+                                isDealer={me.seatIndex === gameState.dealerSeatIndex}
+                                isCurrentTurn={me.seatIndex === gameState.currentLeaderSeatIndex}
+                                isMe={true}
+                                position="bottom"
+                            />
+                        </div>
+
+                        <div className="w-full max-w-4xl px-4 overflow-x-auto no-scrollbar pb-4">
+                            <Hand
+                                cards={me.hand}
+                                onPlayCard={(card) => sendAction({ type: 'PLAY_CARD', playerId: myId, card })}
+                                playableCards={me.hand}
+                                myTurn={isMyTurn}
+                            />
+                        </div>
+                    </div>
+                )}
+            </footer>
+
+            {/* Modals */}
+            <AnimatePresence>
+                {gameState.phase === 'lobby' && me?.isHost && (
+                    <motion.div
+                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50 p-4"
+                    >
+                        <div className="glass-panel p-8 w-full max-w-md text-center">
+                            <Users className="w-16 h-16 text-primary mx-auto mb-4" />
+                            <h2 className="text-3xl font-bold mb-2 text-white">Waiting for Players</h2>
+                            <p className="text-slate-400 mb-4">Share this link with friends:</p>
+
+                            <div className="bg-black/30 rounded-xl p-3 mb-6 flex items-center gap-2">
+                                <input
+                                    type="text"
+                                    value={shareLink}
+                                    readOnly
+                                    className="flex-1 bg-transparent text-white text-sm font-mono outline-none"
+                                />
+                                <button
+                                    onClick={() => navigator.clipboard.writeText(shareLink)}
+                                    className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                                >
+                                    <Copy className="w-4 h-4 text-slate-300" />
+                                </button>
+                            </div>
+
+                            <div className="space-y-2 mb-8">
+                                {gameState.players.map(p => (
+                                    <div key={p.id} className="flex items-center justify-between bg-white/5 p-3 rounded-xl">
+                                        <span className="font-bold">{p.name}</span>
+                                        {p.isHost && <Crown className="w-4 h-4 text-yellow-500" />}
+                                    </div>
+                                ))}
+                            </div>
+
+                            <button
+                                onClick={() => setShowSetup(true)}
+                                disabled={gameState.players.length < 2}
+                                className="w-full py-4 bg-primary text-white font-bold rounded-2xl text-xl shadow-lg shadow-primary/30 hover:shadow-primary/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {gameState.players.length < 2 ? 'Waiting for players...' : 'Start Game'}
+                            </button>
+                        </div>
+                    </motion.div>
+                )}
+
+                <GameSetupModal
+                    isOpen={showSetup}
+                    onClose={() => setShowSetup(false)}
+                    onStartGame={(numCards) => {
+                        sendAction({
+                            type: 'START_GAME',
+                            payload: { initialCardsPerPlayer: numCards }
+                        });
+                        setShowSetup(false);
+                    }}
+                    playerCount={gameState.players.length}
+                />
+
+                {gameState.phase === 'lobby' && !me?.isHost && (
+                    <motion.div
+                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50"
+                    >
+                        <div className="text-center">
+                            <div className="animate-pulse text-primary text-6xl mb-4">...</div>
+                            <div className="text-white text-2xl font-bold">Waiting for host to start...</div>
+                            <div className="text-slate-400 mt-2">{gameState.players.length} players joined</div>
+                        </div>
+                    </motion.div>
+                )}
+
+                {gameState.phase === 'betting' && isMyTurn && (
+                    <BetInput
+                        maxBet={gameState.cardsPerPlayer}
+                        forbiddenBet={forbiddenBet}
+                        onPlaceBet={(bet) => sendAction({ type: 'BET', playerId: myId, bet })}
+                    />
+                )}
+
+                {gameState.phase === 'finished' && (
+                    <Leaderboard
+                        players={gameState.players}
+                        scores={gameState.players.reduce((acc, p) => ({ ...acc, [p.id]: p.totalPoints }), {})}
+                        onPlayAgain={() => sendAction({ type: 'START_GAME' })}
+                        isHost={!!me?.isHost}
+                    />
+                )}
+
+                {showSettings && gameState.settings && (
+                    <HostSettings
+                        isOpen={showSettings}
+                        onClose={() => setShowSettings(false)}
+                        currentSettings={gameState.settings}
+                        onSave={(newSettings) => {
+                            sendAction({ type: 'UPDATE_SETTINGS', settings: newSettings });
+                            setShowSettings(false);
+                        }}
+                    />
+                )}
+            </AnimatePresence>
+        </div>
+    );
+}

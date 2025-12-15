@@ -1,25 +1,32 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
-import { v4 as uuidv4 } from 'uuid';
 import { motion } from 'framer-motion';
-import { Play, Users, BookOpen } from 'lucide-react';
+import { Play, Users, BookOpen, Gamepad2 } from 'lucide-react';
 import Credits from '../components/Credits';
 import HowToPlay from '../components/HowToPlay';
-import '../lib/i18n'; // Import i18n config
+import '../lib/i18n';
 import { useTranslation } from 'react-i18next';
 
 export default function Home() {
   const router = useRouter();
   const { t } = useTranslation('common');
   const [name, setName] = useState('');
-  const [roomCode, setRoomCode] = useState('');
   const [showHowToPlay, setShowHowToPlay] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [roomCode, setRoomCode] = useState('');
 
   useEffect(() => {
     const storedName = localStorage.getItem('judgment_name');
     if (storedName) setName(storedName);
   }, []);
+
+  const playNow = () => {
+    if (name) {
+      localStorage.setItem('judgment_name', name);
+    }
+    router.push('/play');
+  };
 
   const createRoom = async () => {
     if (!name) return alert(t('enterName'));
@@ -67,7 +74,7 @@ export default function Home() {
             {t('title')}
           </h1>
           <h2 className="text-3xl text-yellow-500 font-bold tracking-wider">
-            फैसलो
+            faislo
           </h2>
           <p className="text-slate-400 mt-2">{t('subtitle')}</p>
         </div>
@@ -81,39 +88,59 @@ export default function Home() {
             className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all text-center text-lg"
           />
 
-          <div className="grid grid-cols-1 gap-3">
-            <button
-              onClick={createRoom}
-              className="w-full py-3 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition-all flex items-center justify-center gap-2 group"
+          {/* Main Play Button */}
+          <button
+            onClick={playNow}
+            className="w-full py-4 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 text-white font-bold rounded-xl shadow-lg shadow-primary/30 transition-all flex items-center justify-center gap-3 group text-xl"
+          >
+            <Gamepad2 className="w-6 h-6 group-hover:scale-110 transition-transform" />
+            Play Now
+          </button>
+
+          <p className="text-xs text-slate-500">
+            Share the link with friends to play together!
+          </p>
+
+          {/* Advanced Options Toggle */}
+          <button
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            className="text-sm text-slate-400 hover:text-white flex items-center justify-center gap-1 mx-auto transition-colors"
+          >
+            {showAdvanced ? 'Hide' : 'Show'} Room Options
+          </button>
+
+          {/* Advanced Room Options */}
+          {showAdvanced && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="space-y-3 pt-2 border-t border-white/10"
             >
-              <Play className="w-5 h-5 fill-current group-hover:scale-110 transition-transform" /> {t('createRoom')}
-            </button>
-
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-white/10"></div>
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-[#1e293b] px-2 text-slate-500">{t('orJoin')}</span>
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder={t('roomCode')}
-                value={roomCode}
-                onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-                className="flex-1 bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all text-center uppercase tracking-widest font-mono"
-              />
               <button
-                onClick={joinRoom}
-                className="px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl transition-all flex items-center justify-center"
+                onClick={createRoom}
+                className="w-full py-3 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2"
               >
-                <Users className="w-5 h-5" />
+                <Play className="w-5 h-5" /> {t('createRoom')}
               </button>
-            </div>
-          </div>
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder={t('roomCode')}
+                  value={roomCode}
+                  onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+                  className="flex-1 bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all text-center uppercase tracking-widest font-mono"
+                />
+                <button
+                  onClick={joinRoom}
+                  className="px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl transition-all flex items-center justify-center"
+                >
+                  <Users className="w-5 h-5" />
+                </button>
+              </div>
+            </motion.div>
+          )}
 
           <button
             onClick={() => setShowHowToPlay(true)}
