@@ -60,41 +60,57 @@ export default function Room() {
         setMyName(storedName);
         setMyId(storedId);
 
-        const isCreator = router.query.host === 'true';
-        setIsHost(isCreator);
+        // Determine if we are technically the "Creator" from the URL
+        let isCreator = router.query.host === 'true';
 
         // Try to fetch existing state first (to handle refreshes)
         fetch(`/api/rooms/${roomCode}/sync`)
             .then(async (res) => {
                 if (res.ok) {
                     const existingState = await res.json();
-                    console.log("Found existing state, restoring...");
+                    console.log("Found existing state.");
                     setGameState(existingState);
                     setConnectionStatus('connected');
 
-                    // If we found state, we skip P2P init *as a creator* who makes a new game,
-                    // but we still need to set up P2P to listen or host.
+                    // Check if *I* am the host according to the authoritative state
+                    // This recovers Host status if I refreshed the page and lost ?host=true
+                    const meInState = existingState.players.find((p: Player) => p.id === storedId);
+                    if (meInState && meInState.isHost) {
+                        console.log("Recovered HOST status from state.");
+                        isCreator = true;
+                        setIsHost(true);
+                    } else if (isCreator) {
+                        // Rare edge case: I am creator in URL but not in state (maybe state was reset?)
+                        // We keep isCreator = true so we can re-initialize properly if needed.
+                        setIsHost(true);
+                    } else {
+                        // I am just a player (or spectator)
+                        setIsHost(false);
+                    }
+
+                    // Setup P2P with correct Host status
                     setupP2P(roomCode, isCreator, storedId, storedName, true); // true = already initialized
                 } else {
                     // No state found.
                     if (isCreator) {
+                        setIsHost(true);
                         // Create new game
-                        setupP2P(roomCode, isCreator, storedId, storedName, false);
+                        setupP2P(roomCode, true, storedId, storedName, false);
                     } else {
+                        setIsHost(false);
                         // Joiner - wait for host
-                        setupP2P(roomCode, isCreator, storedId, storedName, false);
+                        setupP2P(roomCode, false, storedId, storedName, false);
                     }
                 }
             })
             .catch(e => {
                 console.error("Error checking state:", e);
                 // Fallback to regular init flow
+                setIsHost(isCreator);
                 setupP2P(roomCode, isCreator, storedId, storedName, false);
             });
 
         return () => {
-            // Cleanup handled in setupP2P return or separate effect? 
-            // Ideally we should extract cleanup. For now, rely on ref modification or simple unmount.
             if (p2pRef.current) p2pRef.current.destroy();
             stopPolling();
         };
