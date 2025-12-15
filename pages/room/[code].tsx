@@ -7,6 +7,7 @@ import { P2PManager, P2PEvent } from '../../lib/p2p';
 import { GameState, Player, Card, GameAction, Suit, GameSettings } from '../../lib/types';
 import { createDeck, shuffleDeck, prepareRoundDeck } from '../../lib/deck';
 import { getTrickWinner, isValidPlay, calculateScores, canBet, getAutoPlayCard } from '../../lib/gameEngine';
+import { processGameAction } from '../../lib/gameLogic';
 import PlayerSeat from '../../components/PlayerSeat';
 import Hand from '../../components/Hand';
 import CardComponent from '../../components/Card';
@@ -196,17 +197,29 @@ export default function Room() {
                     }
                 } else {
                     // I connected to host, send JOIN
-                    // Wait a brief moment to ensure connection stable?
+                    // We send via BOTH P2P and API to ensure Host gets it.
+                    // API is more reliable for the initial handshake if P2P data channel is flaky.
+
+                    const joinAction = {
+                        type: 'JOIN',
+                        playerId: myId,
+                        payload: { name: myName }
+                    };
+
+                    // 1. Send via Messaging (P2P)
                     setTimeout(() => {
                         p2pRef.current?.send({
                             type: 'ACTION',
-                            action: {
-                                type: 'JOIN',
-                                playerId: myId,
-                                payload: { name: myName }
-                            }
+                            action: joinAction
                         });
                     }, 500);
+
+                    // 2. Send via Server Queue (Reliable Fallback)
+                    fetch(`/api/rooms/${code}/sync`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: joinAction, playerId: myId })
+                    }).catch(err => console.error("Failed to send JOIN via API:", err));
                 }
                 break;
             case 'DATA':
@@ -260,6 +273,9 @@ export default function Room() {
             currentDeck: [],
             playedPile: []
         };
+
+        // Update Ref immediately to allow instant action processing
+        gameStateRef.current = newState;
         setGameState(newState);
 
         // Always save initial state to server
@@ -288,222 +304,36 @@ export default function Room() {
         }
     };
 
-    // --- Game Logic (Host Only) ---
-
-    // Helper to start a round (or continue game)
-    const playRound = (state: GameState, seed: string) => {
-        const numPlayers = state.players.length;
-
-        // Round 1 calculates cardsPerPlayer from user input (already set in START_GAME)
-        // Subsequent rounds: cardsPerPlayer - 1
-        if (state.roundIndex > 0) {
-            state.cardsPerPlayer = state.cardsPerPlayer - 1;
-        }
-
-        if (state.cardsPerPlayer < 1) {
-            state.phase = 'finished';
-            return;
-        }
-
-        try {
-            // prepareRoundDeck handles the discard strategy (priority for round 0, random for others)
-            // and dealing.
-            const { hands, remainingDeck, discarded } = prepareRoundDeck(
-                state.currentDeck,
-                state.roundIndex,
-                numPlayers,
-                state.cardsPerPlayer,
-                seed
-            );
-
-            // Update state with new hands and new currentDeck (the remaining cards)
-            state.players.forEach((p, i) => {
-                p.hand = hands[i];
-                p.currentBet = null;
-                p.tricksWon = 0;
-            });
-
-            // The 'currentDeck' in state becomes the remaining cards (not dealt, not discarded)
-            // Actually, in our logic "currentDeck" holds the stack.
-            // Wait, if we discard and deal, the remaining cards are... 0?
-            // "Round 1... remove exactly cardsToDiscard... deal C cards"
-            // If cardsToDiscard = 52 - needed.
-            // Then remaining is 0.
-            // This is handled correctly by prepareRoundDeck. 
-            // state.currentDeck should update to whatever is left (likely empty array).
-            state.currentDeck = remainingDeck;
-
-            // Trump rotation: Spades -> Hearts -> Diamonds -> Clubs
-            // Cycle repeats every 4 rounds.
-            const trumpOrder: Suit[] = ['spades', 'hearts', 'diamonds', 'clubs'];
-            state.trump = trumpOrder[state.roundIndex % 4];
-
-            state.dealerSeatIndex = state.roundIndex % numPlayers;
-            state.currentLeaderSeatIndex = (state.dealerSeatIndex + 1) % numPlayers;
-            state.phase = 'betting';
-            state.currentTrick = [];
-            state.playedPile = []; // Clear played pile for new round
-
-        } catch (e) {
-            console.error("Failed to start round:", e);
-            state.phase = 'finished'; // Should not happen if math is right
-        }
-    };
-
     const processAction = (action: GameAction) => {
         const currentState = gameStateRef.current;
         if (!currentState) return;
 
-        let newState: GameState = JSON.parse(JSON.stringify(currentState));
+        try {
+            const newState = processGameAction(currentState, action);
 
-        switch (action.type) {
-            case 'JOIN':
-                const joinAction = action as any;
-                if (newState.players.some((p: Player) => p.id === joinAction.playerId)) {
-                    const p = newState.players.find((p: Player) => p.id === joinAction.playerId);
-                    if (p) p.connected = true;
-                } else {
-                    const newPlayer: Player = {
-                        id: joinAction.playerId,
-                        name: joinAction.payload.name,
-                        seatIndex: newState.players.length,
-                        isHost: false,
-                        connected: true,
-                        isAway: false,
-                        currentBet: null,
-                        tricksWon: 0,
-                        totalPoints: 0,
-                        hand: []
-                    };
-                    newState.players.push(newPlayer);
-                }
-                break;
+            // Critical: Update ref immediately to prevent race conditions
+            gameStateRef.current = newState;
+            setGameState(newState);
 
-            case 'START_GAME':
-                if (newState.phase !== 'lobby' && newState.phase !== 'finished') return;
+            // --- SYNCHRONIZATION ---
 
-                // Initialize match
-                newState.roundIndex = 0;
-                newState.scoresHistory = [];
-                newState.players.forEach((p: Player) => { p.totalPoints = 0; p.tricksWon = 0; p.currentBet = null; p.hand = []; });
+            // 1. P2P Broadcast (Always try)
+            if (p2pRef.current) {
+                p2pRef.current.send({ type: 'STATE_UPDATE', state: newState });
+            }
 
-                // Set initial deck (52 cards)
-                newState.currentDeck = createDeck();
-                newState.playedPile = [];
-
-                // Set initial cards per player
-                const payload = (action as any).payload;
-                if (payload && payload.initialCardsPerPlayer) {
-                    newState.cardsPerPlayer = payload.initialCardsPerPlayer;
-                } else {
-                    // Default fallback
-                    newState.cardsPerPlayer = Math.floor(52 / newState.players.length);
-                }
-
-                playRound(newState, newState.deckSeed);
-                break;
-
-            case 'BET':
-                const playerIndex = newState.players.findIndex(p => p.id === action.playerId);
-                if (playerIndex === -1) return;
-
-                if (!canBet(action.bet, newState.players.map(p => p.currentBet || 0).slice(0, playerIndex), newState.players.length, newState.cardsPerPlayer)) {
-                    return;
-                }
-
-                newState.players[playerIndex].currentBet = action.bet;
-                newState.currentLeaderSeatIndex = (newState.currentLeaderSeatIndex + 1) % newState.players.length;
-
-                if (newState.players.every(p => p.currentBet !== null)) {
-                    newState.phase = 'playing';
-                    newState.currentLeaderSeatIndex = (newState.dealerSeatIndex + 1) % newState.players.length;
-                }
-                break;
-
-            case 'PLAY_CARD':
-                const pIndex = newState.players.findIndex(p => p.id === action.playerId);
-                if (pIndex === -1) return;
-
-                const player = newState.players[pIndex];
-                const card = action.card;
-
-                if (!isValidPlay(card, player.hand, newState.currentTrick, newState.trump)) {
-                    return;
-                }
-
-                player.hand = player.hand.filter(c => !(c.suit === card.suit && c.rank === card.rank));
-                newState.currentTrick.push({ seatIndex: pIndex, card: card });
-                newState.currentLeaderSeatIndex = (newState.currentLeaderSeatIndex + 1) % newState.players.length;
-
-                if (newState.currentTrick.length === newState.players.length) {
-                    const winnerSeatIndex = getTrickWinner(newState.currentTrick, newState.trump);
-                    newState.players[winnerSeatIndex].tricksWon = (newState.players[winnerSeatIndex].tricksWon || 0) + 1;
-
-                    // Move trick cards to playedPile
-                    const trickCards = newState.currentTrick.map(pc => pc.card);
-                    if (!newState.playedPile) newState.playedPile = []; // Safety check
-                    newState.playedPile.push(...trickCards);
-
-                    newState.currentTrick = [];
-                    newState.currentLeaderSeatIndex = winnerSeatIndex;
-
-                    if (newState.players[0].hand.length === 0) {
-                        // Round finished
-                        const roundScores = calculateScores(newState.players);
-                        newState.players.forEach(p => {
-                            p.totalPoints = (p.totalPoints || 0) + (roundScores[p.id] || 0);
-                        });
-                        newState.roundIndex++;
-
-                        // Prepare deck for next round: Recycled played cards become the new deck
-                        // "The deck continually shrinks" -> We only use what was played?
-                        // "Every round discards some number of cards permanently from this same deck"
-                        // If we recycle playedPile, that matches the logic (we dealt N, we gather N, next round uses N).
-                        newState.currentDeck = [...newState.playedPile];
-                        newState.playedPile = [];
-
-                        playRound(newState, newState.deckSeed + newState.roundIndex);
-                    }
-                }
-                break;
-
-            case 'UPDATE_SETTINGS':
-                const updateSettingsAction = action as { type: 'UPDATE_SETTINGS', settings: Partial<GameSettings> };
-                newState.settings = { ...newState.settings, ...updateSettingsAction.settings };
-                break;
-
-            case 'TOGGLE_AWAY':
-                const awayPlayer = newState.players.find((p: Player) => p.id === action.playerId);
-                if (awayPlayer) awayPlayer.isAway = !awayPlayer.isAway;
-                break;
-
-            case 'RENAME_PLAYER':
-                const renamePlayer = newState.players.find((p: Player) => p.id === action.playerId);
-                if (renamePlayer) renamePlayer.name = action.newName;
-                break;
-
-            case 'END_GAME':
-                newState.phase = 'finished';
-                break;
-        }
-
-        setGameState(newState);
-
-        // --- SYNCHRONIZATION ---
-
-        // 1. P2P Broadcast (Always try)
-        if (p2pRef.current) {
-            p2pRef.current.send({ type: 'STATE_UPDATE', state: newState });
-        }
-
-        // 2. Server Persistence (Host Only)
-        // Always save state to server to support polling clients and recovery
-        if (isHost) {
-            fetch(`/api/rooms/${roomCode}/sync`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(newState)
-            }).catch(e => console.error("State sync error:", e));
+            // 2. Server Persistence (Host Only)
+            // Always save state to server to support polling clients and recovery
+            if (isHost) {
+                fetch(`/api/rooms/${roomCode}/sync`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newState)
+                }).catch(e => console.error("State sync error:", e));
+            }
+        } catch (e) {
+            console.warn("Action failed explicitly:", e);
+            // Optionally show error to user?
         }
     };
 
