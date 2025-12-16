@@ -1,6 +1,8 @@
 import React from 'react';
 import { Player, Suit } from '../lib/types';
-import { Trophy, Target, Hand, Crown } from 'lucide-react';
+import { Crown, Zap } from 'lucide-react';
+import { motion } from 'framer-motion';
+import clsx from 'clsx';
 
 interface GameHUDProps {
     players: Player[];
@@ -9,52 +11,58 @@ interface GameHUDProps {
     dealerName?: string;
 }
 
-const suitIcons: Record<Suit, string> = {
-    spades: '♠️',
-    hearts: '♥️',
-    diamonds: '♦️',
-    clubs: '♣️'
+const suitInfo: Record<Suit, { symbol: string; color: string; bgColor: string }> = {
+    spades: { symbol: '♠', color: 'text-slate-100', bgColor: 'bg-slate-700' },
+    hearts: { symbol: '♥', color: 'text-red-500', bgColor: 'bg-red-500/20' },
+    diamonds: { symbol: '♦', color: 'text-red-500', bgColor: 'bg-red-500/20' },
+    clubs: { symbol: '♣', color: 'text-slate-100', bgColor: 'bg-slate-700' }
 };
 
 export default function GameHUD({ players, currentRound, trump, dealerName }: GameHUDProps) {
-    return (
-        <div className="fixed top-20 left-0 right-0 flex flex-col items-center pointer-events-none z-10 space-y-2">
+    const trumpData = suitInfo[trump];
 
-            {/* Round Info */}
-            <div className="bg-black/60 backdrop-blur-md rounded-full px-6 py-1 text-white text-sm font-bold border border-white/10 shadow-lg flex items-center gap-4">
-                <span>Round {currentRound}</span>
-                <span className="w-px h-4 bg-white/20"></span>
-                <span className="flex items-center gap-1">Trump: <span className="text-xl leading-none">{suitIcons[trump]}</span></span>
+    return (
+        <div className="fixed top-20 left-0 right-0 flex flex-col items-center pointer-events-none z-10 space-y-2 px-4">
+            {/* Main Round Info Bar */}
+            <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-black/70 backdrop-blur-md rounded-2xl px-6 py-2 text-white border border-white/10 shadow-xl flex items-center gap-4"
+            >
+                {/* Round Badge */}
+                <div className="flex items-center gap-2">
+                    <div className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-xs font-bold px-2.5 py-1 rounded-full">
+                        ROUND
+                    </div>
+                    <span className="text-2xl font-bold text-white">{currentRound}</span>
+                </div>
+
+                <div className="w-px h-8 bg-white/20"></div>
+
+                {/* Trump Display */}
+                <div className="flex items-center gap-2">
+                    <Zap className="w-4 h-4 text-yellow-400" />
+                    <span className="text-xs text-slate-400 font-medium uppercase tracking-wider">Trump</span>
+                    <div className={clsx(
+                        "px-3 py-1 rounded-lg font-bold text-xl",
+                        trumpData.bgColor,
+                        trumpData.color
+                    )}>
+                        {trumpData.symbol}
+                    </div>
+                </div>
+
+                {/* Dealer */}
                 {dealerName && (
                     <>
-                        <span className="w-px h-4 bg-white/20"></span>
-                        <span className="flex items-center gap-1 text-yellow-400"><Crown className="w-3 h-3" /> {dealerName}</span>
+                        <div className="w-px h-8 bg-white/20"></div>
+                        <div className="flex items-center gap-2">
+                            <Crown className="w-4 h-4 text-yellow-400" />
+                            <span className="text-sm font-medium text-yellow-300">{dealerName}</span>
+                        </div>
                     </>
                 )}
-            </div>
-
-            {/* Players Stats */}
-            <div className="bg-black/40 backdrop-blur-md rounded-full px-6 py-2 border border-white/10 flex space-x-6 pointer-events-auto overflow-x-auto max-w-[90vw] no-scrollbar">
-                {players.map(p => (
-                    <div key={p.id} className="flex flex-col items-center min-w-[80px]">
-                        <span className="text-xs font-bold text-slate-300 mb-1 truncate max-w-[80px]">{p.name}</span>
-                        <div className="flex space-x-3 text-xs">
-                            <div className="flex items-center space-x-1 text-blue-400" title="Bet">
-                                <Target className="w-3 h-3" />
-                                <span>{p.currentBet !== null ? p.currentBet : '-'}</span>
-                            </div>
-                            <div className="flex items-center space-x-1 text-green-400" title="Tricks Won">
-                                <Hand className="w-3 h-3" />
-                                <span>{p.tricksWon}</span>
-                            </div>
-                            <div className="flex items-center space-x-1 text-yellow-400" title="Total Score">
-                                <Trophy className="w-3 h-3" />
-                                <span>{p.totalPoints}</span>
-                            </div>
-                        </div>
-                    </div>
-                ))}
-            </div>
+            </motion.div>
         </div>
     );
 }
