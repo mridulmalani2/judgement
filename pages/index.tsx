@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { motion } from 'framer-motion';
-import { Play, Users, BookOpen, Gamepad2 } from 'lucide-react';
+import { BookOpen, Gamepad2 } from 'lucide-react';
 import Credits from '../components/Credits';
 import HowToPlay from '../components/HowToPlay';
 import '../lib/i18n';
@@ -13,8 +13,6 @@ export default function Home() {
   const { t } = useTranslation('common');
   const [name, setName] = useState('');
   const [showHowToPlay, setShowHowToPlay] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [roomCode, setRoomCode] = useState('');
 
   useEffect(() => {
     const storedName = localStorage.getItem('judgment_name');
@@ -26,28 +24,6 @@ export default function Home() {
       localStorage.setItem('judgment_name', name);
     }
     router.push('/play');
-  };
-
-  const createRoom = async () => {
-    if (!name) return alert(t('enterName'));
-    localStorage.setItem('judgment_name', name);
-
-    try {
-      const res = await fetch('/api/rooms', { method: 'POST' });
-      if (!res.ok) throw new Error('Failed to create room');
-      const data = await res.json();
-      router.push(`/room/${data.roomCode}?host=true`);
-    } catch (e) {
-      console.error(e);
-      alert('Error creating room. Please try again.');
-    }
-  };
-
-  const joinRoom = () => {
-    if (!name) return alert(t('enterName'));
-    if (!roomCode) return alert(t('roomCode'));
-    localStorage.setItem('judgment_name', name);
-    router.push(`/room/${roomCode}`);
   };
 
   return (
@@ -100,47 +76,6 @@ export default function Home() {
           <p className="text-xs text-slate-500">
             Share the link with friends to play together!
           </p>
-
-          {/* Advanced Options Toggle */}
-          <button
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            className="text-sm text-slate-400 hover:text-white flex items-center justify-center gap-1 mx-auto transition-colors"
-          >
-            {showAdvanced ? 'Hide' : 'Show'} Room Options
-          </button>
-
-          {/* Advanced Room Options */}
-          {showAdvanced && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="space-y-3 pt-2 border-t border-white/10"
-            >
-              <button
-                onClick={createRoom}
-                className="w-full py-3 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2"
-              >
-                <Play className="w-5 h-5" /> {t('createRoom')}
-              </button>
-
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder={t('roomCode')}
-                  value={roomCode}
-                  onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-                  className="flex-1 bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all text-center uppercase tracking-widest font-mono"
-                />
-                <button
-                  onClick={joinRoom}
-                  className="px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl transition-all flex items-center justify-center"
-                >
-                  <Users className="w-5 h-5" />
-                </button>
-              </div>
-            </motion.div>
-          )}
 
           <button
             onClick={() => setShowHowToPlay(true)}

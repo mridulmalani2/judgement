@@ -6,7 +6,6 @@
  */
 
 import { NextApiRequest, NextApiResponse } from 'next';
-import { isRedisEnabled } from '../../lib/roomStore';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (req.method !== 'GET') {
@@ -15,7 +14,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const hasRedisUrl = !!process.env.UPSTASH_REDIS_REST_URL;
     const hasRedisToken = !!process.env.UPSTASH_REDIS_REST_TOKEN;
-    const redisEnabled = isRedisEnabled();
+    const redisEnabled = hasRedisUrl && hasRedisToken;
 
     // Test Redis connectivity if configured
     let redisConnected = false;
