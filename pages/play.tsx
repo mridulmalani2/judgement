@@ -1,8 +1,7 @@
 /**
  * Simplified Multiplayer Game Page
  *
- * No P2P, no room codes - just pure server polling.
- * First person to join becomes host, others join automatically.
+ * Single game mode - host authenticates with password, others join as players.
  * Works reliably across all networks (corporate, educational, etc.)
  */
 
@@ -21,7 +20,7 @@ import Leaderboard from '../components/Leaderboard';
 import GameHUD from '../components/GameHUD';
 import HostSettings from '../components/HostSettings';
 import GameSetupModal from '../components/GameSetupModal';
-import { Copy, Menu, Users, Crown, Settings as SettingsIcon, RefreshCw, Wifi, WifiOff } from 'lucide-react';
+import { Copy, Menu, Users, Crown, Settings as SettingsIcon, RefreshCw, Wifi, WifiOff, Key, UserPlus } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 
@@ -35,6 +34,13 @@ export default function Play() {
     const [myName, setMyName] = useState<string>('');
     const [nameInput, setNameInput] = useState<string>('');
     const [needsName, setNeedsName] = useState(false);
+
+    // Host authentication
+    const [showHostAuth, setShowHostAuth] = useState(true);
+    const [hostKeyInput, setHostKeyInput] = useState('');
+    const [authError, setAuthError] = useState('');
+    const [isVerifying, setIsVerifying] = useState(false);
+    const [roleDecided, setRoleDecided] = useState(false);
 
     // Game state
     const [gameState, setGameState] = useState<GameState | null>(null);
@@ -57,23 +63,19 @@ export default function Play() {
     useEffect(() => { isHostRef.current = isHost; }, [isHost]);
     useEffect(() => { myIdRef.current = myId; }, [myId]);
 
-    // Initialize player identity
+    // Initialize player ID on mount
     useEffect(() => {
-        const storedName = localStorage.getItem('judgment_name');
         const storedId = localStorage.getItem('judgment_id') || uuidv4();
-
         if (!localStorage.getItem('judgment_id')) {
             localStorage.setItem('judgment_id', storedId);
         }
-
         setMyId(storedId);
         myIdRef.current = storedId;
 
+        // Load stored name for pre-filling
+        const storedName = localStorage.getItem('judgment_name');
         if (storedName) {
-            setMyName(storedName);
-            initializeConnection(storedId, storedName);
-        } else {
-            setNeedsName(true);
+            setNameInput(storedName);
         }
 
         return () => {
@@ -83,7 +85,63 @@ export default function Play() {
         };
     }, []);
 
-    const initializeConnection = async (playerId: string, playerName: string) => {
+    // Verify host password
+    const verifyHostKey = async () => {
+        if (!hostKeyInput.trim()) {
+            setAuthError('Please enter the host key');
+            return;
+        }
+
+        setIsVerifying(true);
+        setAuthError('');
+
+        try {
+            const res = await fetch('/api/verify-host', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: hostKeyInput })
+            });
+
+            const data = await res.json();
+
+            if (data.valid) {
+                setIsHost(true);
+                isHostRef.current = true;
+                setShowHostAuth(false);
+                setRoleDecided(true);
+                proceedAfterAuth(true);
+            } else {
+                setAuthError('Invalid host key. Try again or continue as player.');
+            }
+        } catch (error) {
+            console.error('Host verification error:', error);
+            setAuthError('Failed to verify. Please try again.');
+        } finally {
+            setIsVerifying(false);
+        }
+    };
+
+    // Continue as player (not host)
+    const continueAsPlayer = () => {
+        setIsHost(false);
+        isHostRef.current = false;
+        setShowHostAuth(false);
+        setRoleDecided(true);
+        proceedAfterAuth(false);
+    };
+
+    // After role is decided, check if name is needed
+    const proceedAfterAuth = (asHost: boolean) => {
+        const storedName = localStorage.getItem('judgment_name');
+        if (storedName) {
+            setMyName(storedName);
+            initializeConnection(myIdRef.current, storedName, asHost);
+        } else {
+            setNeedsName(true);
+        }
+    };
+
+    const initializeConnection = async (playerId: string, playerName: string, asHost: boolean) => {
         setConnectionStatus('connecting');
 
         try {
@@ -91,32 +149,107 @@ export default function Play() {
             const res = await fetch('/api/game/state');
 
             if (res.ok) {
-                // Game exists - join it
+                // Game exists
                 const existingState = await res.json();
-                setGameState(existingState);
-                gameStateRef.current = existingState;
 
-                // Check if I'm already the host
+                // Check if I'm already in the game
                 const meInState = existingState.players.find((p: Player) => p.id === playerId);
-                if (meInState?.isHost) {
+
+                if (asHost) {
+                    // User authenticated as host
+                    if (meInState) {
+                        // I'm already in the game - make sure I'm marked as host
+                        if (!meInState.isHost) {
+                            // Transfer host status to me
+                            const updatedPlayers = existingState.players.map((p: Player) => ({
+                                ...p,
+                                isHost: p.id === playerId
+                            }));
+                            const updatedState = { ...existingState, players: updatedPlayers, lastUpdate: Date.now() };
+                            await fetch('/api/game/state', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(updatedState)
+                            });
+                            setGameState(updatedState);
+                            gameStateRef.current = updatedState;
+                        } else {
+                            setGameState(existingState);
+                            gameStateRef.current = existingState;
+                        }
+                    } else {
+                        // Not in game - join as host
+                        // First, update existing players to not be host
+                        const updatedPlayers = existingState.players.map((p: Player) => ({
+                            ...p,
+                            isHost: false
+                        }));
+                        const newPlayer: Player = {
+                            id: playerId,
+                            name: playerName,
+                            seatIndex: existingState.players.length,
+                            isHost: true,
+                            connected: true,
+                            isAway: false,
+                            currentBet: null,
+                            tricksWon: 0,
+                            totalPoints: 0,
+                            hand: []
+                        };
+                        const updatedState = {
+                            ...existingState,
+                            players: [...updatedPlayers, newPlayer],
+                            lastUpdate: Date.now()
+                        };
+                        await fetch('/api/game/state', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(updatedState)
+                        });
+                        setGameState(updatedState);
+                        gameStateRef.current = updatedState;
+                    }
                     setIsHost(true);
                     isHostRef.current = true;
-                }
+                } else {
+                    // User is joining as player (not host)
+                    setGameState(existingState);
+                    gameStateRef.current = existingState;
 
-                // If I'm not in the game yet, send join action
-                if (!meInState) {
-                    await sendJoinAction(playerId, playerName);
+                    // If I'm already in the game with host status from before, remove it
+                    if (meInState?.isHost) {
+                        const updatedPlayers = existingState.players.map((p: Player) => ({
+                            ...p,
+                            isHost: p.id === playerId ? false : p.isHost
+                        }));
+                        const updatedState = { ...existingState, players: updatedPlayers, lastUpdate: Date.now() };
+                        await fetch('/api/game/state', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(updatedState)
+                        });
+                        setGameState(updatedState);
+                        gameStateRef.current = updatedState;
+                    } else if (!meInState) {
+                        // Not in game yet - send join action
+                        await sendJoinAction(playerId, playerName);
+                    }
                 }
 
                 setConnectionStatus('connected');
                 startPolling(playerId);
             } else if (res.status === 404) {
-                // No game exists - I become the host
-                setIsHost(true);
-                isHostRef.current = true;
-                await createNewGame(playerId, playerName);
-                setConnectionStatus('connected');
-                startPolling(playerId);
+                // No game exists
+                if (asHost) {
+                    // Create new game as host
+                    await createNewGame(playerId, playerName);
+                    setConnectionStatus('connected');
+                    startPolling(playerId);
+                } else {
+                    // No game and user is not host - show error
+                    setErrorMessage('No active game. Please wait for the host to start a game.');
+                    setConnectionStatus('error');
+                }
             } else {
                 throw new Error('Failed to connect to game server');
             }
@@ -211,13 +344,18 @@ export default function Play() {
 
                     setConnectionStatus('connected');
                 } else if (stateRes.status === 404) {
-                    // Game was cleared - become host if we're the first to notice
+                    // Game was cleared
                     if (gameStateRef.current) {
                         setGameState(null);
                         gameStateRef.current = null;
-                        setIsHost(true);
-                        isHostRef.current = true;
-                        await createNewGame(playerId, myName || 'Player');
+                        // Only recreate if I'm the host
+                        if (isHostRef.current) {
+                            await createNewGame(playerId, myName || 'Player');
+                        } else {
+                            // Show error for non-host players
+                            setErrorMessage('Game ended. Please wait for the host to start a new game.');
+                            setConnectionStatus('error');
+                        }
                     }
                 }
 
@@ -283,7 +421,7 @@ export default function Play() {
         localStorage.setItem('judgment_name', name);
         setMyName(name);
         setNeedsName(false);
-        initializeConnection(myId, name);
+        initializeConnection(myId, name, isHost);
     };
 
     const resetGame = async () => {
@@ -321,6 +459,85 @@ export default function Play() {
 
         return () => clearTimeout(timer);
     }, [gameState, isHost]);
+
+    // Host authentication screen
+    if (showHostAuth && !roleDecided) {
+        return (
+            <div className="min-h-screen flex items-center justify-center text-white bg-gradient-to-br from-slate-900 to-black p-4">
+                <Head><title>Join Game - Judgment</title></Head>
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="glass-panel p-8 w-full max-w-md text-center"
+                >
+                    <div className="mb-6">
+                        <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <Key className="w-8 h-8 text-white" />
+                        </div>
+                        <h1 className="text-3xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-pink-400">
+                            Welcome to Judgment
+                        </h1>
+                        <p className="text-slate-400">Are you the host?</p>
+                    </div>
+
+                    <div className="space-y-4">
+                        <div>
+                            <input
+                                type="password"
+                                placeholder="Enter host key"
+                                value={hostKeyInput}
+                                onChange={(e) => {
+                                    setHostKeyInput(e.target.value);
+                                    setAuthError('');
+                                }}
+                                onKeyPress={(e) => e.key === 'Enter' && verifyHostKey()}
+                                className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all text-center text-lg"
+                                autoFocus
+                            />
+                            {authError && (
+                                <p className="text-red-400 text-sm mt-2">{authError}</p>
+                            )}
+                        </div>
+
+                        <button
+                            onClick={verifyHostKey}
+                            disabled={isVerifying}
+                            className="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50 text-white font-bold rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
+                        >
+                            {isVerifying ? (
+                                <>
+                                    <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full"></div>
+                                    Verifying...
+                                </>
+                            ) : (
+                                <>
+                                    <Crown className="w-5 h-5" />
+                                    Enter as Host
+                                </>
+                            )}
+                        </button>
+
+                        <div className="relative">
+                            <div className="absolute inset-0 flex items-center">
+                                <div className="w-full border-t border-white/10"></div>
+                            </div>
+                            <div className="relative flex justify-center text-sm">
+                                <span className="px-4 bg-slate-900/50 text-slate-500">or</span>
+                            </div>
+                        </div>
+
+                        <button
+                            onClick={continueAsPlayer}
+                            className="w-full py-3 bg-slate-700/50 hover:bg-slate-600/50 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 border border-white/10"
+                        >
+                            <UserPlus className="w-5 h-5" />
+                            Continue as Player
+                        </button>
+                    </div>
+                </motion.div>
+            </div>
+        );
+    }
 
     // Name entry screen
     if (needsName) {
