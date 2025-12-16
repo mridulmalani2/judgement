@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { X, Check, Lock, Minus, Plus } from 'lucide-react';
+import { Lock, Minus, Plus, Target, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import clsx from 'clsx';
 
 interface BetInputProps {
     maxBet: number;
@@ -18,56 +19,139 @@ export default function BetInput({ maxBet, forbiddenBet, onPlaceBet }: BetInputP
 
     return (
         <div className="fixed inset-0 pointer-events-none flex items-center justify-center z-50 p-4 pb-48">
-            <div className="pointer-events-auto">
+            {/* Backdrop */}
+            <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="absolute inset-0 bg-black/60 backdrop-blur-sm pointer-events-auto"
+            />
+
+            <div className="pointer-events-auto relative z-10">
                 <motion.div
-                    initial={{ scale: 0.9, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    className="glass-panel p-8 w-full max-w-sm text-center border-t border-white/10 shadow-2xl bg-black/60 backdrop-blur-xl"
+                    initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                    animate={{ scale: 1, opacity: 1, y: 0 }}
+                    className="relative overflow-hidden rounded-3xl shadow-2xl"
                 >
-                    <h2 className="text-3xl font-bold text-white mb-2">Place Your Bet</h2>
-                    <p className="text-slate-400 mb-8">How many hands will you win?</p>
+                    {/* Gradient border effect */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-3xl" />
 
-                    <div className="flex items-center justify-center space-x-8 mb-8">
-                        <button
-                            onClick={decrement}
-                            className="w-16 h-16 rounded-full bg-slate-800 text-white flex items-center justify-center hover:bg-slate-700 active:scale-95 transition-all shadow-lg border border-slate-600"
-                        >
-                            <Minus className="w-8 h-8" />
-                        </button>
+                    <div className="relative m-[2px] rounded-[22px] bg-slate-900 p-8 text-center">
+                        {/* Header */}
+                        <div className="flex items-center justify-center gap-2 mb-2">
+                            <div className="bg-indigo-500/20 p-2 rounded-full">
+                                <Target className="w-6 h-6 text-indigo-400" />
+                            </div>
+                        </div>
+                        <h2 className="text-2xl font-bold text-white mb-1">Place Your Bet</h2>
+                        <p className="text-slate-400 text-sm mb-8">How many tricks will you win this round?</p>
 
-                        <div className="text-7xl font-bold text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-400 w-32 font-mono">
-                            {bet}
+                        {/* Bet Counter */}
+                        <div className="flex items-center justify-center gap-6 mb-8">
+                            <motion.button
+                                whileHover={{ scale: 1.1 }}
+                                whileTap={{ scale: 0.9 }}
+                                onClick={decrement}
+                                disabled={bet === 0}
+                                className={clsx(
+                                    "w-16 h-16 rounded-2xl flex items-center justify-center transition-all shadow-lg border-2",
+                                    bet === 0
+                                        ? "bg-slate-800/50 border-slate-700 text-slate-600 cursor-not-allowed"
+                                        : "bg-gradient-to-br from-slate-700 to-slate-800 border-slate-600 text-white hover:border-slate-500"
+                                )}
+                            >
+                                <Minus className="w-7 h-7" />
+                            </motion.button>
+
+                            <motion.div
+                                key={bet}
+                                initial={{ scale: 0.8, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                className={clsx(
+                                    "w-28 h-28 rounded-2xl flex items-center justify-center text-6xl font-bold shadow-xl border-2",
+                                    isForbidden
+                                        ? "bg-red-900/30 border-red-500/50 text-red-400"
+                                        : "bg-gradient-to-br from-slate-800 to-slate-900 border-slate-600 text-white"
+                                )}
+                            >
+                                {bet}
+                            </motion.div>
+
+                            <motion.button
+                                whileHover={{ scale: 1.1 }}
+                                whileTap={{ scale: 0.9 }}
+                                onClick={increment}
+                                disabled={bet === maxBet}
+                                className={clsx(
+                                    "w-16 h-16 rounded-2xl flex items-center justify-center transition-all shadow-lg border-2",
+                                    bet === maxBet
+                                        ? "bg-slate-800/50 border-slate-700 text-slate-600 cursor-not-allowed"
+                                        : "bg-gradient-to-br from-slate-700 to-slate-800 border-slate-600 text-white hover:border-slate-500"
+                                )}
+                            >
+                                <Plus className="w-7 h-7" />
+                            </motion.button>
                         </div>
 
-                        <button
-                            onClick={increment}
-                            className="w-16 h-16 rounded-full bg-slate-800 text-white flex items-center justify-center hover:bg-slate-700 active:scale-95 transition-all shadow-lg border border-slate-600"
+                        {/* Quick select buttons */}
+                        <div className="flex items-center justify-center gap-2 mb-6">
+                            {Array.from({ length: Math.min(maxBet + 1, 6) }, (_, i) => (
+                                <motion.button
+                                    key={i}
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={() => setBet(i)}
+                                    className={clsx(
+                                        "w-10 h-10 rounded-xl text-sm font-bold transition-all border",
+                                        bet === i
+                                            ? "bg-indigo-500 text-white border-indigo-400 shadow-lg shadow-indigo-500/30"
+                                            : i === forbiddenBet
+                                                ? "bg-red-900/20 text-red-400 border-red-500/30 cursor-not-allowed"
+                                                : "bg-slate-800 text-slate-300 border-slate-700 hover:border-slate-500"
+                                    )}
+                                    disabled={i === forbiddenBet}
+                                >
+                                    {i}
+                                </motion.button>
+                            ))}
+                            {maxBet >= 6 && (
+                                <span className="text-slate-500 text-sm px-2">...</span>
+                            )}
+                        </div>
+
+                        {/* Forbidden bet warning */}
+                        <AnimatePresence>
+                            {isForbidden && (
+                                <motion.div
+                                    initial={{ height: 0, opacity: 0 }}
+                                    animate={{ height: 'auto', opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    className="mb-6"
+                                >
+                                    <div className="flex items-center justify-center gap-2 text-red-400 font-medium bg-red-900/20 py-3 px-4 rounded-xl border border-red-500/30">
+                                        <AlertTriangle className="w-4 h-4" />
+                                        <span>Can't bet {forbiddenBet} (total bets ≠ cards)</span>
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+
+                        {/* Submit Button */}
+                        <motion.button
+                            whileHover={{ scale: isForbidden ? 1 : 1.02 }}
+                            whileTap={{ scale: isForbidden ? 1 : 0.98 }}
+                            onClick={() => onPlaceBet(bet)}
+                            disabled={isForbidden}
+                            className={clsx(
+                                "w-full py-4 text-lg font-bold rounded-2xl transition-all flex items-center justify-center gap-2 shadow-xl",
+                                isForbidden
+                                    ? "bg-slate-700 text-slate-500 cursor-not-allowed"
+                                    : "bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white hover:shadow-indigo-500/30"
+                            )}
                         >
-                            <Plus className="w-8 h-8" />
-                        </button>
+                            <Lock className="w-5 h-5" />
+                            <span>Lock In Bet</span>
+                        </motion.button>
                     </div>
-
-                    <AnimatePresence>
-                        {isForbidden && (
-                            <motion.div
-                                initial={{ height: 0, opacity: 0 }}
-                                animate={{ height: 'auto', opacity: 1 }}
-                                exit={{ height: 0, opacity: 0 }}
-                                className="text-rose-400 mb-6 font-bold bg-rose-900/20 py-2 rounded-lg border border-rose-500/30"
-                            >
-                                Cannot bet {forbiddenBet} (Total ≠ Hands)
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-
-                    <button
-                        onClick={() => onPlaceBet(bet)}
-                        disabled={isForbidden}
-                        className="w-full py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-xl font-bold rounded-2xl hover:shadow-lg hover:shadow-indigo-500/30 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 shadow-xl"
-                    >
-                        <Lock className="w-5 h-5" />
-                        <span>Lock Bet</span>
-                    </button>
                 </motion.div>
             </div>
         </div>

@@ -20,6 +20,8 @@ import Leaderboard from '../components/Leaderboard';
 import GameHUD from '../components/GameHUD';
 import HostSettings from '../components/HostSettings';
 import GameSetupModal from '../components/GameSetupModal';
+import ScoreHistory from '../components/ScoreHistory';
+import BettingPanel from '../components/BettingPanel';
 import { Copy, Menu, Users, Crown, Settings as SettingsIcon, RefreshCw, Wifi, WifiOff, Key, UserPlus } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
@@ -628,12 +630,32 @@ export default function Play() {
 
             {/* HUD */}
             {gameState.phase !== 'lobby' && gameState.phase !== 'finished' && (
-                <GameHUD
-                    players={gameState.players}
-                    currentRound={gameState.roundIndex + 1}
-                    trump={gameState.trump}
-                    dealerName={gameState.players[gameState.dealerSeatIndex]?.name}
-                />
+                <>
+                    <GameHUD
+                        players={gameState.players}
+                        currentRound={gameState.roundIndex + 1}
+                        trump={gameState.trump}
+                        dealerName={gameState.players[gameState.dealerSeatIndex]?.name}
+                    />
+
+                    {/* Score History Panel */}
+                    <ScoreHistory
+                        players={gameState.players}
+                        scoresHistory={gameState.scoresHistory}
+                        currentRound={gameState.roundIndex + 1}
+                    />
+
+                    {/* Betting Panel - Shows during betting and playing */}
+                    {(gameState.phase === 'betting' || gameState.phase === 'playing') && (
+                        <BettingPanel
+                            players={gameState.players}
+                            currentBettorSeatIndex={gameState.currentLeaderSeatIndex}
+                            cardsPerPlayer={gameState.cardsPerPlayer}
+                            phase={gameState.phase}
+                            trump={gameState.trump}
+                        />
+                    )}
+                </>
             )}
 
             {/* Top Bar */}
