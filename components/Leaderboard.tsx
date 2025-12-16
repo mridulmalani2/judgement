@@ -5,6 +5,7 @@ import { Player } from '../lib/types';
 import { useRouter } from 'next/router';
 import confetti from 'canvas-confetti';
 import clsx from 'clsx';
+import { useTranslation } from 'react-i18next';
 
 interface LeaderboardProps {
     players: Player[];
@@ -15,6 +16,7 @@ interface LeaderboardProps {
 
 export default function Leaderboard({ players, scores, onPlayAgain, isHost }: LeaderboardProps) {
     const router = useRouter();
+    const { t } = useTranslation('common');
     const [sortedPlayers, setSortedPlayers] = useState<Player[]>([]);
     const [showContent, setShowContent] = useState(false);
 
@@ -154,9 +156,9 @@ export default function Leaderboard({ players, scores, onPlayAgain, isHost }: Le
                                 />
                             </div>
                             <h2 className="text-4xl font-black text-white uppercase tracking-wider mb-1">
-                                Game Over!
+                                {t('leaderboard.gameOver')}
                             </h2>
-                            <p className="text-white/70 text-lg">Final Standings</p>
+                            <p className="text-white/70 text-lg">{t('leaderboard.finalStandings')}</p>
                         </motion.div>
                     </div>
 
@@ -194,7 +196,7 @@ export default function Leaderboard({ players, scores, onPlayAgain, isHost }: Le
                                                 transition={{ repeat: Infinity, duration: 1.5 }}
                                                 className="text-xs text-yellow-400 uppercase font-bold tracking-widest flex items-center gap-1"
                                             >
-                                                <Sparkles className="w-3 h-3" /> Champion
+                                                <Sparkles className="w-3 h-3" /> {t('leaderboard.champion')}
                                             </motion.span>
                                         )}
                                     </div>
@@ -213,7 +215,7 @@ export default function Leaderboard({ players, scores, onPlayAgain, isHost }: Le
                                     >
                                         {scores[player.id] || 0}
                                     </motion.span>
-                                    <span className="text-xs text-slate-500 block uppercase tracking-wider">points</span>
+                                    <span className="text-xs text-slate-500 block uppercase tracking-wider">{t('leaderboard.points')}</span>
                                 </div>
                             </motion.div>
                         ))}
@@ -227,7 +229,7 @@ export default function Leaderboard({ players, scores, onPlayAgain, isHost }: Le
                             onClick={() => router.push('/')}
                             className="flex items-center gap-2 px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl transition-all border border-slate-600"
                         >
-                            <Home className="w-5 h-5" /> Home
+                            <Home className="w-5 h-5" /> {t('leaderboard.home')}
                         </motion.button>
                         {isHost && onPlayAgain && (
                             <motion.button
@@ -236,7 +238,7 @@ export default function Leaderboard({ players, scores, onPlayAgain, isHost }: Le
                                 onClick={onPlayAgain}
                                 className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold rounded-xl transition-all shadow-lg shadow-indigo-500/30"
                             >
-                                <RefreshCw className="w-5 h-5" /> Play Again
+                                <RefreshCw className="w-5 h-5" /> {t('leaderboard.playAgain')}
                             </motion.button>
                         )}
                     </div>

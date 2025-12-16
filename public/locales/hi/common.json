@@ -2,6 +2,8 @@
     "title": "फैसलो",
     "subtitle": "पारिवारिक कार्ड गेम",
     "enterName": "अपना नाम दर्ज करें",
+    "playNow": "खेलें",
+    "shareLink": "दोस्तों के साथ खेलने के लिए लिंक शेयर करें!",
     "createRoom": "नया कमरा बनाएं",
     "orJoin": "या मौजूदा में शामिल हों",
     "roomCode": "रूम कोड",
@@ -11,6 +13,65 @@
     "credits": {
         "developedBy": "प्यार और Google AntiGravity के साथ विकसित किया गया",
         "dedication": "घर पर दादा-दादी के लिए, और जब उन्हें मुन्नू की याद आती है।"
+    },
+    "game": {
+        "welcomeToJudgment": "जजमेंट में आपका स्वागत है",
+        "areYouHost": "क्या आप होस्ट हैं?",
+        "enterHostKey": "होस्ट पासवर्ड डालें",
+        "verifying": "जांच हो रही है...",
+        "enterAsHost": "होस्ट के रूप में खेलें",
+        "continueAsPlayer": "खिलाड़ी के रूप में जारी रखें",
+        "welcome": "स्वागत है!",
+        "enterNameToJoin": "खेल में शामिल होने के लिए अपना नाम दर्ज करें",
+        "yourName": "आपका नाम",
+        "joinGame": "खेल में शामिल हों",
+        "connectionError": "कनेक्शन में त्रुटि",
+        "tryAgain": "फिर से कोशिश करें",
+        "connecting": "कनेक्ट हो रहा है...",
+        "connected": "कनेक्टेड",
+        "settingUpGame": "खेल तैयार हो रहा है",
+        "host": "होस्ट",
+        "resetGame": "खेल रीसेट करें",
+        "waitingForPlayers": "खिलाड़ियों का इंतज़ार",
+        "shareLinkWithFriends": "दोस्तों के साथ यह लिंक शेयर करें:",
+        "waitingForPlayersShort": "खिलाड़ियों का इंतज़ार...",
+        "startGame": "खेल शुरू करें",
+        "waitingForHostToStart": "होस्ट के शुरू करने का इंतज़ार...",
+        "playersJoined": "{{count}} खिलाड़ी शामिल हुए"
+    },
+    "betting": {
+        "placeYourBet": "अपनी बोली लगाएं",
+        "howManyTricks": "इस राउंड में आप कितनी चालें जीतेंगे?",
+        "cantBet": "{{bet}} पर बोली नहीं लगा सकते (कुल बोली ≠ कार्ड)",
+        "lockInBet": "बोली पक्की करें"
+    },
+    "leaderboard": {
+        "gameOver": "खेल खत्म!",
+        "finalStandings": "अंतिम स्थिति",
+        "champion": "चैंपियन",
+        "points": "अंक",
+        "home": "होम",
+        "playAgain": "फिर से खेलें"
+    },
+    "setup": {
+        "startGame": "खेल शुरू करें",
+        "configureRound": "पहले राउंड को सेट करें।",
+        "cardsPerPlayer": "प्रति खिलाड़ी कार्ड (राउंड 1)",
+        "cancel": "रद्द करें"
+    },
+    "bettingPanel": {
+        "betting": "बोली",
+        "bets": "बोलियां",
+        "cards": "कार्ड",
+        "totalBets": "कुल बोली",
+        "lastPlayerCantBet": "अंतिम खिलाड़ी {{bet}} पर बोली नहीं लगा सकता",
+        "overbidBy": "{{count}} ज्यादा बोली",
+        "underbidBy": "{{count}} कम बोली",
+        "exactlyBooked": "बिल्कुल सही!"
+    },
+    "hud": {
+        "round": "राउंड",
+        "trump": "ट्रम्प"
     },
     "howToPlayContent": {
         "title": "जजमेंट कैसे खेलें",

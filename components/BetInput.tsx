@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Lock, Minus, Plus, Target, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
+import { useTranslation } from 'react-i18next';
 
 interface BetInputProps {
     maxBet: number;
@@ -10,6 +11,7 @@ interface BetInputProps {
 }
 
 export default function BetInput({ maxBet, forbiddenBet, onPlaceBet }: BetInputProps) {
+    const { t } = useTranslation('common');
     const [bet, setBet] = useState(0);
 
     const increment = () => setBet(prev => Math.min(prev + 1, maxBet));
@@ -42,8 +44,8 @@ export default function BetInput({ maxBet, forbiddenBet, onPlaceBet }: BetInputP
                                 <Target className="w-6 h-6 text-indigo-400" />
                             </div>
                         </div>
-                        <h2 className="text-2xl font-bold text-white mb-1">Place Your Bet</h2>
-                        <p className="text-slate-400 text-sm mb-8">How many tricks will you win this round?</p>
+                        <h2 className="text-2xl font-bold text-white mb-1">{t('betting.placeYourBet')}</h2>
+                        <p className="text-slate-400 text-sm mb-8">{t('betting.howManyTricks')}</p>
 
                         {/* Bet Counter */}
                         <div className="flex items-center justify-center gap-6 mb-8">
@@ -129,7 +131,7 @@ export default function BetInput({ maxBet, forbiddenBet, onPlaceBet }: BetInputP
                                 >
                                     <div className="flex items-center justify-center gap-2 text-red-400 font-medium bg-red-900/20 py-3 px-4 rounded-xl border border-red-500/30">
                                         <AlertTriangle className="w-4 h-4" />
-                                        <span>Can't bet {forbiddenBet} (total bets ≠ cards)</span>
+                                        <span>{t('betting.cantBet', { bet: forbiddenBet })}</span>
                                     </div>
                                 </motion.div>
                             )}
@@ -149,7 +151,7 @@ export default function BetInput({ maxBet, forbiddenBet, onPlaceBet }: BetInputP
                             )}
                         >
                             <Lock className="w-5 h-5" />
-                            <span>Lock In Bet</span>
+                            <span>{t('betting.lockInBet')}</span>
                         </motion.button>
                     </div>
                 </motion.div>

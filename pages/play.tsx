@@ -25,11 +25,14 @@ import BettingPanel from '../components/BettingPanel';
 import { Copy, Menu, Users, Crown, Settings as SettingsIcon, RefreshCw, Wifi, WifiOff, Key, UserPlus } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
+import '../lib/i18n';
+import { useTranslation } from 'react-i18next';
 
 const POLL_INTERVAL = 500; // 500ms for responsive updates
 
 export default function Play() {
     const router = useRouter();
+    const { t } = useTranslation('common');
 
     // Player identity
     const [myId, setMyId] = useState<string>('');
@@ -477,16 +480,16 @@ export default function Play() {
                             <Key className="w-8 h-8 text-white" />
                         </div>
                         <h1 className="text-3xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-pink-400">
-                            Welcome to Judgment
+                            {t('game.welcomeToJudgment')}
                         </h1>
-                        <p className="text-slate-400">Are you the host?</p>
+                        <p className="text-slate-400">{t('game.areYouHost')}</p>
                     </div>
 
                     <div className="space-y-4">
                         <div>
                             <input
                                 type="password"
-                                placeholder="Enter host key"
+                                placeholder={t('game.enterHostKey')}
                                 value={hostKeyInput}
                                 onChange={(e) => {
                                     setHostKeyInput(e.target.value);
@@ -509,12 +512,12 @@ export default function Play() {
                             {isVerifying ? (
                                 <>
                                     <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full"></div>
-                                    Verifying...
+                                    {t('game.verifying')}
                                 </>
                             ) : (
                                 <>
                                     <Crown className="w-5 h-5" />
-                                    Enter as Host
+                                    {t('game.enterAsHost')}
                                 </>
                             )}
                         </button>
@@ -533,7 +536,7 @@ export default function Play() {
                             className="w-full py-3 bg-slate-700/50 hover:bg-slate-600/50 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 border border-white/10"
                         >
                             <UserPlus className="w-5 h-5" />
-                            Continue as Player
+                            {t('game.continueAsPlayer')}
                         </button>
                     </div>
                 </motion.div>
@@ -548,13 +551,13 @@ export default function Play() {
                 <Head><title>Join Game - Judgment</title></Head>
                 <div className="glass-panel p-8 w-full max-w-md text-center">
                     <h1 className="text-3xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-pink-400">
-                        Welcome!
+                        {t('game.welcome')}
                     </h1>
-                    <p className="text-slate-400 mb-6">Enter your name to join the game</p>
+                    <p className="text-slate-400 mb-6">{t('game.enterNameToJoin')}</p>
 
                     <input
                         type="text"
-                        placeholder="Your name"
+                        placeholder={t('game.yourName')}
                         value={nameInput}
                         onChange={(e) => setNameInput(e.target.value)}
                         onKeyPress={(e) => e.key === 'Enter' && handleNameSubmit()}
@@ -567,7 +570,7 @@ export default function Play() {
                         disabled={!nameInput.trim()}
                         className="w-full py-3 bg-primary hover:bg-primary/90 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-lg transition-all"
                     >
-                        Join Game
+                        {t('game.joinGame')}
                     </button>
                 </div>
             </div>
@@ -581,13 +584,13 @@ export default function Play() {
                 <Head><title>Connection Error - Judgment</title></Head>
                 <div className="text-center max-w-md">
                     <WifiOff className="w-16 h-16 text-red-500 mx-auto mb-4" />
-                    <h2 className="text-2xl font-bold mb-2">Connection Error</h2>
+                    <h2 className="text-2xl font-bold mb-2">{t('game.connectionError')}</h2>
                     <p className="text-slate-400 mb-6">{errorMessage}</p>
                     <button
                         onClick={() => window.location.reload()}
                         className="px-6 py-3 bg-white/10 hover:bg-white/20 rounded-full font-bold transition-colors flex items-center gap-2 mx-auto"
                     >
-                        <RefreshCw className="w-5 h-5" /> Try Again
+                        <RefreshCw className="w-5 h-5" /> {t('game.tryAgain')}
                     </button>
                 </div>
             </div>
@@ -601,8 +604,8 @@ export default function Play() {
                 <Head><title>Connecting... - Judgment</title></Head>
                 <div className="text-center">
                     <div className="animate-spin w-12 h-12 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
-                    <h2 className="text-xl font-bold">Connecting...</h2>
-                    <p className="text-slate-400 mt-2">Setting up game</p>
+                    <h2 className="text-xl font-bold">{t('game.connecting')}</h2>
+                    <p className="text-slate-400 mt-2">{t('game.settingUpGame')}</p>
                 </div>
             </div>
         );
@@ -668,8 +671,8 @@ export default function Play() {
                         <h1 className="text-xl font-bold text-white leading-none">Judgment</h1>
                         <div className="text-xs text-slate-400 flex items-center gap-1">
                             <span className={clsx("w-2 h-2 rounded-full", connectionStatus === 'connected' ? "bg-green-500" : "bg-yellow-500")}></span>
-                            {connectionStatus === 'connected' ? 'Connected' : 'Connecting...'}
-                            {isHost && <span className="ml-1 text-yellow-400">(Host)</span>}
+                            {connectionStatus === 'connected' ? t('game.connected') : t('game.connecting')}
+                            {isHost && <span className="ml-1 text-yellow-400">({t('game.host')})</span>}
                         </div>
                     </div>
                 </div>
@@ -688,7 +691,7 @@ export default function Play() {
                                 onClick={resetGame}
                                 className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 text-xs font-bold rounded-full border border-red-500/30 transition-colors"
                             >
-                                Reset Game
+                                {t('game.resetGame')}
                             </button>
                         </>
                     )}
@@ -814,8 +817,8 @@ export default function Play() {
                     >
                         <div className="glass-panel p-8 w-full max-w-md text-center">
                             <Users className="w-16 h-16 text-primary mx-auto mb-4" />
-                            <h2 className="text-3xl font-bold mb-2 text-white">Waiting for Players</h2>
-                            <p className="text-slate-400 mb-4">Share this link with friends:</p>
+                            <h2 className="text-3xl font-bold mb-2 text-white">{t('game.waitingForPlayers')}</h2>
+                            <p className="text-slate-400 mb-4">{t('game.shareLinkWithFriends')}</p>
 
                             <div className="bg-black/30 rounded-xl p-3 mb-6 flex items-center gap-2">
                                 <input
@@ -846,7 +849,7 @@ export default function Play() {
                                 disabled={gameState.players.length < 2}
                                 className="w-full py-4 bg-primary text-white font-bold rounded-2xl text-xl shadow-lg shadow-primary/30 hover:shadow-primary/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                                {gameState.players.length < 2 ? 'Waiting for players...' : 'Start Game'}
+                                {gameState.players.length < 2 ? t('game.waitingForPlayersShort') : t('game.startGame')}
                             </button>
                         </div>
                     </motion.div>
@@ -872,8 +875,8 @@ export default function Play() {
                     >
                         <div className="text-center">
                             <div className="animate-pulse text-primary text-6xl mb-4">...</div>
-                            <div className="text-white text-2xl font-bold">Waiting for host to start...</div>
-                            <div className="text-slate-400 mt-2">{gameState.players.length} players joined</div>
+                            <div className="text-white text-2xl font-bold">{t('game.waitingForHostToStart')}</div>
+                            <div className="text-slate-400 mt-2">{t('game.playersJoined', { count: gameState.players.length })}</div>
                         </div>
                     </motion.div>
                 )}

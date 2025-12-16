@@ -3,6 +3,7 @@ import { Player, Suit } from '../lib/types';
 import { motion } from 'framer-motion';
 import { Target, Check, Clock, AlertCircle, TrendingUp } from 'lucide-react';
 import clsx from 'clsx';
+import { useTranslation } from 'react-i18next';
 
 interface BettingPanelProps {
     players: Player[];
@@ -20,6 +21,7 @@ const suitSymbols: Record<Suit, { symbol: string; color: string }> = {
 };
 
 export default function BettingPanel({ players, currentBettorSeatIndex, cardsPerPlayer, phase, trump }: BettingPanelProps) {
+    const { t } = useTranslation('common');
     const totalBets = players.reduce((sum, p) => sum + (p.currentBet ?? 0), 0);
     const allBetsPlaced = players.every(p => p.currentBet !== null);
     const trumpInfo = suitSymbols[trump];
@@ -36,7 +38,7 @@ export default function BettingPanel({ players, currentBettorSeatIndex, cardsPer
                     <div className="flex items-center gap-2">
                         <Target className="w-4 h-4 text-indigo-400" />
                         <span className="font-bold text-white text-sm">
-                            {phase === 'betting' ? 'Betting' : 'Bets'}
+                            {phase === 'betting' ? t('bettingPanel.betting') : t('bettingPanel.bets')}
                         </span>
                     </div>
                     <div className={clsx(
@@ -50,7 +52,7 @@ export default function BettingPanel({ players, currentBettorSeatIndex, cardsPer
                 {/* Summary Stats */}
                 <div className="grid grid-cols-2 gap-2 mb-4">
                     <div className="bg-white/5 rounded-lg p-2 text-center">
-                        <div className="text-xs text-slate-500 mb-0.5">Cards</div>
+                        <div className="text-xs text-slate-500 mb-0.5">{t('bettingPanel.cards')}</div>
                         <div className="text-lg font-bold text-white">{cardsPerPlayer}</div>
                     </div>
                     <div className={clsx(
@@ -59,7 +61,7 @@ export default function BettingPanel({ players, currentBettorSeatIndex, cardsPer
                             totalBets > cardsPerPlayer && allBetsPlaced ? "bg-red-500/20" :
                                 "bg-white/5"
                     )}>
-                        <div className="text-xs text-slate-500 mb-0.5">Total Bets</div>
+                        <div className="text-xs text-slate-500 mb-0.5">{t('bettingPanel.totalBets')}</div>
                         <div className={clsx(
                             "text-lg font-bold",
                             totalBets === cardsPerPlayer && allBetsPlaced ? "text-green-400" :
@@ -75,7 +77,7 @@ export default function BettingPanel({ players, currentBettorSeatIndex, cardsPer
                 {!allBetsPlaced && totalBets !== cardsPerPlayer && (
                     <div className="flex items-center gap-2 mb-3 text-xs bg-amber-500/10 text-amber-400 rounded-lg px-2 py-1.5 border border-amber-500/20">
                         <AlertCircle className="w-3 h-3" />
-                        <span>Last player can't bet {cardsPerPlayer - totalBets}</span>
+                        <span>{t('bettingPanel.lastPlayerCantBet', { bet: cardsPerPlayer - totalBets })}</span>
                     </div>
                 )}
 
@@ -171,9 +173,9 @@ export default function BettingPanel({ players, currentBettorSeatIndex, cardsPer
                         totalBets === cardsPerPlayer && "bg-yellow-500/10 text-yellow-400 border border-yellow-500/20"
                     )}>
                         <TrendingUp className="w-3 h-3" />
-                        {totalBets > cardsPerPlayer && `Overbid by ${totalBets - cardsPerPlayer}`}
-                        {totalBets < cardsPerPlayer && `Underbid by ${cardsPerPlayer - totalBets}`}
-                        {totalBets === cardsPerPlayer && "Exactly booked!"}
+                        {totalBets > cardsPerPlayer && t('bettingPanel.overbidBy', { count: totalBets - cardsPerPlayer })}
+                        {totalBets < cardsPerPlayer && t('bettingPanel.underbidBy', { count: cardsPerPlayer - totalBets })}
+                        {totalBets === cardsPerPlayer && t('bettingPanel.exactlyBooked')}
                     </div>
                 )}
             </div>
