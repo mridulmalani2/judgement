@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Users } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 
 interface GameSetupModalProps {
     isOpen: boolean;
@@ -10,6 +11,7 @@ interface GameSetupModalProps {
 }
 
 export default function GameSetupModal({ isOpen, onClose, onStartGame, playerCount }: GameSetupModalProps) {
+    const { t } = useTranslation('common');
     // Default to max possible cards (floor(52/N)) or some reasonable default like 5-7
     // Rule: initialCardsPerPlayer * numberOfPlayers <= 52.
     // So max = floor(52 / playerCount).
@@ -25,12 +27,12 @@ export default function GameSetupModal({ isOpen, onClose, onStartGame, playerCou
         >
             <div className="glass-panel p-8 w-full max-w-md text-center border border-white/10 rounded-2xl bg-[#1a1a1a]">
                 <Users className="w-16 h-16 text-primary mx-auto mb-4" />
-                <h2 className="text-3xl font-bold mb-2 text-white">Start Game</h2>
-                <p className="text-slate-400 mb-8">Configure the first round.</p>
+                <h2 className="text-3xl font-bold mb-2 text-white">{t('setup.startGame')}</h2>
+                <p className="text-slate-400 mb-8">{t('setup.configureRound')}</p>
 
                 <div className="mb-8 text-left">
                     <label className="block text-sm font-medium text-slate-300 mb-2">
-                        Cards per player (Round 1)
+                        {t('setup.cardsPerPlayer')}
                     </label>
                     <input
                         type="range"
@@ -52,13 +54,13 @@ export default function GameSetupModal({ isOpen, onClose, onStartGame, playerCou
                         onClick={onClose}
                         className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-slate-300 font-bold rounded-xl transition-colors"
                     >
-                        Cancel
+                        {t('setup.cancel')}
                     </button>
                     <button
                         onClick={() => onStartGame(cards)}
                         className="flex-1 py-3 bg-primary text-white font-bold rounded-xl shadow-lg shadow-primary/30 hover:shadow-primary/50 transition-all"
                     >
-                        Start Game
+                        {t('setup.startGame')}
                     </button>
                 </div>
             </div>

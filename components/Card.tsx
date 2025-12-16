@@ -113,7 +113,7 @@ export default function Card({ card, onClick, disabled, selected, playable, size
                 sizeClasses[size],
                 selected && "ring-4 ring-yellow-400 ring-offset-2 ring-offset-slate-900 z-20",
                 playable && !disabled && "cursor-pointer shadow-lg shadow-indigo-500/30 border-indigo-400 hover:shadow-indigo-500/50",
-                disabled && "opacity-50 grayscale cursor-not-allowed",
+                disabled && "opacity-60 cursor-not-allowed",
                 !selected && !playable && "border-slate-200 shadow-lg"
             )}
             style={{

@@ -3,6 +3,7 @@ import { Player, Suit } from '../lib/types';
 import { Crown, Zap } from 'lucide-react';
 import { motion } from 'framer-motion';
 import clsx from 'clsx';
+import { useTranslation } from 'react-i18next';
 
 interface GameHUDProps {
     players: Player[];
@@ -19,6 +20,7 @@ const suitInfo: Record<Suit, { symbol: string; color: string; bgColor: string }>
 };
 
 export default function GameHUD({ players, currentRound, trump, dealerName }: GameHUDProps) {
+    const { t } = useTranslation('common');
     const trumpData = suitInfo[trump];
 
     return (
@@ -32,7 +34,7 @@ export default function GameHUD({ players, currentRound, trump, dealerName }: Ga
                 {/* Round Badge */}
                 <div className="flex items-center gap-2">
                     <div className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-xs font-bold px-2.5 py-1 rounded-full">
-                        ROUND
+                        {t('hud.round')}
                     </div>
                     <span className="text-2xl font-bold text-white">{currentRound}</span>
                 </div>
@@ -42,7 +44,7 @@ export default function GameHUD({ players, currentRound, trump, dealerName }: Ga
                 {/* Trump Display */}
                 <div className="flex items-center gap-2">
                     <Zap className="w-4 h-4 text-yellow-400" />
-                    <span className="text-xs text-slate-400 font-medium uppercase tracking-wider">Trump</span>
+                    <span className="text-xs text-slate-400 font-medium uppercase tracking-wider">{t('hud.trump')}</span>
                     <div className={clsx(
                         "px-3 py-1 rounded-lg font-bold text-xl",
                         trumpData.bgColor,

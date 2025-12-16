@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { motion } from 'framer-motion';
-import { BookOpen, Gamepad2 } from 'lucide-react';
+import { BookOpen, Gamepad2, Languages } from 'lucide-react';
 import Credits from '../components/Credits';
 import HowToPlay from '../components/HowToPlay';
 import '../lib/i18n';
@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next';
 
 export default function Home() {
   const router = useRouter();
-  const { t } = useTranslation('common');
+  const { t, i18n } = useTranslation('common');
   const [name, setName] = useState('');
   const [showHowToPlay, setShowHowToPlay] = useState(false);
 
@@ -70,11 +70,38 @@ export default function Home() {
             className="w-full py-4 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 text-white font-bold rounded-xl shadow-lg shadow-primary/30 transition-all flex items-center justify-center gap-3 group text-xl"
           >
             <Gamepad2 className="w-6 h-6 group-hover:scale-110 transition-transform" />
-            Play Now
+            {t('playNow')}
           </button>
 
+          {/* Language Toggle */}
+          <div className="flex items-center justify-center gap-2">
+            <Languages className="w-4 h-4 text-slate-400" />
+            <div className="flex bg-black/30 rounded-full p-1 border border-white/10">
+              <button
+                onClick={() => i18n.changeLanguage('en')}
+                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${
+                  i18n.language === 'en'
+                    ? 'bg-primary text-white shadow-lg'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                English
+              </button>
+              <button
+                onClick={() => i18n.changeLanguage('hi')}
+                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${
+                  i18n.language === 'hi'
+                    ? 'bg-primary text-white shadow-lg'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                हिंदी
+              </button>
+            </div>
+          </div>
+
           <p className="text-xs text-slate-500">
-            Share the link with friends to play together!
+            {t('shareLink')}
           </p>
 
           <button

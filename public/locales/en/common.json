@@ -2,6 +2,8 @@
     "title": "Judgment",
     "subtitle": "The Classic Family Card Game",
     "enterName": "Enter your name",
+    "playNow": "Play Now",
+    "shareLink": "Share the link with friends to play together!",
     "createRoom": "Create New Room",
     "orJoin": "Or join existing",
     "roomCode": "Room Code",
@@ -11,6 +13,65 @@
     "credits": {
         "developedBy": "Developed with love and Google AntiGravity by",
         "dedication": "For the grandparents back home, and jab unhe munnu ki yaad aati hain."
+    },
+    "game": {
+        "welcomeToJudgment": "Welcome to Judgment",
+        "areYouHost": "Are you the host?",
+        "enterHostKey": "Enter host key",
+        "verifying": "Verifying...",
+        "enterAsHost": "Enter as Host",
+        "continueAsPlayer": "Continue as Player",
+        "welcome": "Welcome!",
+        "enterNameToJoin": "Enter your name to join the game",
+        "yourName": "Your name",
+        "joinGame": "Join Game",
+        "connectionError": "Connection Error",
+        "tryAgain": "Try Again",
+        "connecting": "Connecting...",
+        "connected": "Connected",
+        "settingUpGame": "Setting up game",
+        "host": "Host",
+        "resetGame": "Reset Game",
+        "waitingForPlayers": "Waiting for Players",
+        "shareLinkWithFriends": "Share this link with friends:",
+        "waitingForPlayersShort": "Waiting for players...",
+        "startGame": "Start Game",
+        "waitingForHostToStart": "Waiting for host to start...",
+        "playersJoined": "{{count}} players joined"
+    },
+    "betting": {
+        "placeYourBet": "Place Your Bet",
+        "howManyTricks": "How many tricks will you win this round?",
+        "cantBet": "Can't bet {{bet}} (total bets ≠ cards)",
+        "lockInBet": "Lock In Bet"
+    },
+    "leaderboard": {
+        "gameOver": "Game Over!",
+        "finalStandings": "Final Standings",
+        "champion": "Champion",
+        "points": "points",
+        "home": "Home",
+        "playAgain": "Play Again"
+    },
+    "setup": {
+        "startGame": "Start Game",
+        "configureRound": "Configure the first round.",
+        "cardsPerPlayer": "Cards per player (Round 1)",
+        "cancel": "Cancel"
+    },
+    "bettingPanel": {
+        "betting": "Betting",
+        "bets": "Bets",
+        "cards": "Cards",
+        "totalBets": "Total Bets",
+        "lastPlayerCantBet": "Last player can't bet {{bet}}",
+        "overbidBy": "Overbid by {{count}}",
+        "underbidBy": "Underbid by {{count}}",
+        "exactlyBooked": "Exactly booked!"
+    },
+    "hud": {
+        "round": "ROUND",
+        "trump": "Trump"
     },
     "howToPlayContent": {
         "title": "How to Play Judgment",
