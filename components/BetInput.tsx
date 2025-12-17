@@ -20,13 +20,8 @@ export default function BetInput({ maxBet, forbiddenBet, onPlaceBet }: BetInputP
     const isForbidden = bet === forbiddenBet;
 
     return (
-        <div className="fixed inset-0 pointer-events-none flex items-center justify-center z-50 p-4 pb-48">
-            {/* Backdrop */}
-            <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="absolute inset-0 bg-black/60 backdrop-blur-sm pointer-events-auto"
-            />
+        <div className="fixed inset-0 pointer-events-none flex flex-col items-center justify-start md:justify-center z-50 p-4 pt-24 md:pt-0">
+            {/* No Backdrop to keep cards visible */}
 
             <div className="pointer-events-auto relative z-10">
                 <motion.div
