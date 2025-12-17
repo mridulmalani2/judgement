@@ -708,9 +708,9 @@ export default function Play() {
             {/* Game Area */}
             <main className="flex-grow relative flex flex-col md:flex-row items-center justify-center p-4 overflow-hidden">
                 {/* Opponents (Mobile) */}
-                <div className="md:hidden w-full flex space-x-4 overflow-x-auto pb-4 mb-4 no-scrollbar z-10">
+                <div className="md:hidden w-full flex space-x-2 overflow-x-auto pb-2 mb-2 no-scrollbar z-10 px-2 min-h-[80px] items-center">
                     {gameState.players.filter(p => p.id !== myId).map(player => (
-                        <div key={player.id} className="flex-shrink-0">
+                        <div key={player.id} className="flex-shrink-0 transform scale-90 origin-top">
                             <PlayerSeat
                                 player={player}
                                 isDealer={player.seatIndex === gameState.dealerSeatIndex}
@@ -723,7 +723,7 @@ export default function Play() {
                 </div>
 
                 {/* Table Surface */}
-                <div className="relative w-full max-w-[90vw] md:max-w-3xl aspect-square md:aspect-video rounded-[3rem] glass border-2 border-white/5 shadow-2xl flex items-center justify-center overflow-hidden">
+                <div className="relative w-full max-w-[95vw] md:max-w-3xl flex-1 md:flex-none md:aspect-video rounded-[2rem] md:rounded-[3rem] glass border-2 border-white/5 shadow-2xl flex items-center justify-center overflow-hidden my-2">
                     <div className="absolute inset-0 bg-gradient-to-b from-slate-900/50 to-black/50"></div>
 
                     {/* Center Trick */}

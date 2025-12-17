@@ -42,7 +42,7 @@ export default function Card({ card, onClick, disabled, selected, playable, size
     const sizeClasses = {
         sm: 'w-12 h-[4.25rem] text-xs rounded-lg',
         md: 'w-16 h-24 text-sm rounded-xl',
-        lg: 'w-24 h-36 text-xl rounded-2xl',
+        lg: 'w-16 h-24 md:w-24 md:h-36 text-base md:text-xl rounded-lg md:rounded-2xl',
     };
 
     const pipSizes = {
