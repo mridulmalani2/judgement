@@ -20,7 +20,7 @@ export default function BetInput({ maxBet, forbiddenBet, onPlaceBet }: BetInputP
     const isForbidden = bet === forbiddenBet;
 
     return (
-        <div className="fixed inset-x-0 top-16 md:top-auto md:inset-0 pointer-events-none flex flex-col items-center justify-start md:justify-center z-40 p-3 md:p-4">
+        <div className="fixed inset-x-0 top-16 bottom-40 md:top-auto md:bottom-auto md:inset-0 pointer-events-none flex flex-col items-center justify-start md:justify-center z-40 p-3 md:p-4">
             {/* Subtle backdrop for desktop only */}
             <div className="hidden md:block fixed inset-0 bg-black/20 pointer-events-none" />
 
