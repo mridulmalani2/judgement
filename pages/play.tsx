@@ -799,8 +799,8 @@ export default function Play() {
                 </div>
             </main>
 
-            {/* My Hand */}
-            <footer className="relative z-20 pb-safe bg-gradient-to-t from-black/40 to-transparent">
+            {/* My Hand - z-50 to ensure cards are visible above betting modal */}
+            <footer className="relative z-50 pb-safe bg-gradient-to-t from-black/40 to-transparent">
                 {me && (
                     <div className="flex flex-col items-center pt-2">
                         {/* Player info - compact on mobile */}
