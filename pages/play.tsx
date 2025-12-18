@@ -706,50 +706,67 @@ export default function Play() {
             </header>
 
             {/* Game Area */}
-            <main className="flex-grow relative flex flex-col md:flex-row items-center justify-center p-4 overflow-hidden">
-                {/* Opponents (Mobile) */}
-                <div className="md:hidden w-full flex space-x-2 overflow-x-auto pb-2 mb-2 no-scrollbar z-10 px-2 min-h-[80px] items-center">
-                    {gameState.players.filter(p => p.id !== myId).map(player => (
-                        <div key={player.id} className="flex-shrink-0 transform scale-90 origin-top">
-                            <PlayerSeat
-                                player={player}
-                                isDealer={player.seatIndex === gameState.dealerSeatIndex}
-                                isCurrentTurn={player.seatIndex === gameState.currentLeaderSeatIndex}
-                                isMe={false}
-                                position="top"
-                            />
-                        </div>
-                    ))}
+            <main className="flex-grow relative flex flex-col md:flex-row items-center justify-center p-2 md:p-4 overflow-hidden mt-12 md:mt-0">
+                {/* Opponents (Mobile) - Horizontal scrollable row */}
+                <div className="md:hidden w-full px-2 mb-2">
+                    <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar snap-x snap-mandatory">
+                        {gameState.players.filter(p => p.id !== myId).map(player => (
+                            <div key={player.id} className="flex-shrink-0 snap-center">
+                                <PlayerSeat
+                                    player={player}
+                                    isDealer={player.seatIndex === gameState.dealerSeatIndex}
+                                    isCurrentTurn={player.seatIndex === gameState.currentLeaderSeatIndex}
+                                    isMe={false}
+                                    position="top"
+                                />
+                            </div>
+                        ))}
+                    </div>
                 </div>
 
                 {/* Table Surface */}
-                <div className="relative w-full max-w-[95vw] md:max-w-3xl flex-1 md:flex-none md:aspect-video rounded-[2rem] md:rounded-[3rem] glass border-2 border-white/5 shadow-2xl flex items-center justify-center overflow-hidden my-2">
-                    <div className="absolute inset-0 bg-gradient-to-b from-slate-900/50 to-black/50"></div>
+                <div className="relative w-full max-w-[95vw] md:max-w-3xl flex-1 md:flex-none md:aspect-video rounded-2xl md:rounded-[3rem] glass border border-white/10 shadow-2xl flex items-center justify-center overflow-hidden">
+                    {/* Table felt texture */}
+                    <div className="absolute inset-0 bg-gradient-to-br from-emerald-900/30 via-slate-900/60 to-slate-900/80"></div>
+                    <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_transparent_0%,_rgba(0,0,0,0.3)_100%)]"></div>
 
-                    {/* Center Trick */}
-                    <div className="relative z-10 w-48 h-48 md:w-64 md:h-64 flex items-center justify-center">
+                    {/* Center Trick Area */}
+                    <div className="relative z-10 w-40 h-32 md:w-64 md:h-64 flex items-center justify-center">
                         <AnimatePresence>
                             {gameState.currentTrick.map((played, i) => (
                                 <motion.div
                                     key={`${played.seatIndex}-${played.card.id}`}
-                                    initial={{ scale: 0.5, opacity: 0, y: 50 }}
+                                    initial={{ scale: 0.5, opacity: 0, y: 30 }}
                                     animate={{
                                         scale: 1,
                                         opacity: 1,
                                         y: 0,
-                                        rotate: (i - (gameState.currentTrick.length - 1) / 2) * 10
+                                        rotate: (i - (gameState.currentTrick.length - 1) / 2) * 8,
+                                        x: (i - (gameState.currentTrick.length - 1) / 2) * 15
                                     }}
-                                    exit={{ scale: 0.5, opacity: 0 }}
-                                    className="absolute shadow-xl"
+                                    exit={{ scale: 0.5, opacity: 0, y: -20 }}
+                                    transition={{ type: 'spring', damping: 15, stiffness: 200 }}
+                                    className="absolute shadow-2xl"
                                     style={{ zIndex: i }}
                                 >
                                     <CardComponent card={played.card} size="md" />
-                                    <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-xs font-bold bg-black/50 px-2 rounded-full whitespace-nowrap">
+                                    <motion.div
+                                        initial={{ opacity: 0, y: 5 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[10px] md:text-xs font-semibold bg-black/70 backdrop-blur-sm px-2 py-0.5 rounded-full whitespace-nowrap border border-white/10"
+                                    >
                                         {gameState.players.find(p => p.seatIndex === played.seatIndex)?.name}
-                                    </div>
+                                    </motion.div>
                                 </motion.div>
                             ))}
                         </AnimatePresence>
+
+                        {/* Empty state indicator */}
+                        {gameState.currentTrick.length === 0 && gameState.phase === 'playing' && (
+                            <div className="text-slate-500 text-sm font-medium">
+                                {isMyTurn ? 'Your turn to lead' : 'Waiting...'}
+                            </div>
+                        )}
                     </div>
 
                     {/* Desktop Seats */}
@@ -767,7 +784,7 @@ export default function Play() {
                             const y = 50 + radiusY * Math.sin(angle);
 
                             return (
-                                <div key={player.id} className="absolute transform -translate-x-1/2 -translate-y-1/2" style={{ left: `${x}%`, top: `${y}%` }}>
+                                <div key={player.id} className="absolute transform -translate-x-1/2 -translate-y-1/2 pointer-events-auto" style={{ left: `${x}%`, top: `${y}%` }}>
                                     <PlayerSeat
                                         player={player}
                                         isDealer={player.seatIndex === gameState.dealerSeatIndex}
@@ -783,10 +800,11 @@ export default function Play() {
             </main>
 
             {/* My Hand */}
-            <footer className="relative z-20 pb-safe">
+            <footer className="relative z-20 pb-safe bg-gradient-to-t from-black/40 to-transparent">
                 {me && (
-                    <div className="flex flex-col items-center">
-                        <div className="mb-2">
+                    <div className="flex flex-col items-center pt-2">
+                        {/* Player info - compact on mobile */}
+                        <div className="mb-1 md:mb-2 transform scale-90 md:scale-100">
                             <PlayerSeat
                                 player={me}
                                 isDealer={me.seatIndex === gameState.dealerSeatIndex}
@@ -796,7 +814,8 @@ export default function Play() {
                             />
                         </div>
 
-                        <div className="w-full max-w-4xl px-4 overflow-x-auto no-scrollbar pb-4">
+                        {/* Hand of cards */}
+                        <div className="w-full max-w-4xl px-2 md:px-4 overflow-x-auto no-scrollbar pb-2 md:pb-4">
                             <Hand
                                 cards={me.hand}
                                 onPlayCard={(card) => sendAction({ type: 'PLAY_CARD', playerId: myId, card })}

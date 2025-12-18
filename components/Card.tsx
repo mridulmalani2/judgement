@@ -40,15 +40,15 @@ export default function Card({ card, onClick, disabled, selected, playable, size
     const isRed = card?.suit === 'hearts' || card?.suit === 'diamonds';
 
     const sizeClasses = {
-        sm: 'w-12 h-[4.25rem] text-xs rounded-lg',
-        md: 'w-16 h-24 text-sm rounded-xl',
-        lg: 'w-16 h-24 md:w-24 md:h-36 text-base md:text-xl rounded-lg md:rounded-2xl',
+        sm: 'w-10 h-[3.5rem] text-[10px] rounded-lg',
+        md: 'w-14 h-20 md:w-16 md:h-24 text-xs md:text-sm rounded-lg md:rounded-xl',
+        lg: 'w-14 h-20 md:w-20 md:h-[7.5rem] text-sm md:text-lg rounded-lg md:rounded-xl',
     };
 
     const pipSizes = {
-        sm: 'text-lg',
-        md: 'text-2xl',
-        lg: 'text-4xl',
+        sm: 'text-base',
+        md: 'text-lg md:text-2xl',
+        lg: 'text-2xl md:text-4xl',
     };
 
     if (!card) {
