@@ -42,7 +42,7 @@ export default function BettingPanel({ players, currentBettorSeatIndex, cardsPer
                         animate={{ y: 0, opacity: 1 }}
                         exit={{ y: 50, opacity: 0 }}
                         onClick={() => setIsOpen(true)}
-                        className="fixed left-4 bottom-36 md:bottom-8 z-30 bg-indigo-600/90 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-xl shadow-lg shadow-indigo-500/30 backdrop-blur-md border border-white/20 transition-all flex items-center gap-2"
+                        className="fixed left-4 bottom-36 md:bottom-8 z-[60] bg-indigo-600/90 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-xl shadow-lg shadow-indigo-500/30 backdrop-blur-md border border-white/20 transition-all flex items-center gap-2"
                     >
                         <BarChart3 className="w-5 h-5" />
                         <span className="font-semibold text-sm">Stats</span>

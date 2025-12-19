@@ -664,7 +664,7 @@ export default function Play() {
             {/* Top Bar */}
             <header className="p-4 flex justify-between items-center bg-black/20 backdrop-blur-sm z-20">
                 <div className="flex items-center gap-4">
-                    <button onClick={() => router.push('/')} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                    <button className="p-2 hover:bg-white/10 rounded-full transition-colors cursor-default">
                         <Menu className="w-6 h-6 text-white" />
                     </button>
                     <div>
