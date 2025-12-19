@@ -30,7 +30,7 @@ export default function ScoreHistory({ players, scoresHistory, currentRound }: S
                         animate={{ y: 0, opacity: 1 }}
                         exit={{ y: 50, opacity: 0 }}
                         onClick={() => setIsOpen(true)}
-                        className="fixed right-4 bottom-36 md:bottom-8 z-30 bg-amber-600/90 hover:bg-amber-500 text-white px-4 py-2.5 rounded-xl shadow-lg shadow-amber-500/30 backdrop-blur-md border border-white/20 transition-all flex items-center gap-2"
+                        className="fixed right-4 bottom-36 md:bottom-8 z-[60] bg-amber-600/90 hover:bg-amber-500 text-white px-4 py-2.5 rounded-xl shadow-lg shadow-amber-500/30 backdrop-blur-md border border-white/20 transition-all flex items-center gap-2"
                     >
                         <History className="w-5 h-5" />
                         <span className="font-semibold text-sm">Scores</span>
